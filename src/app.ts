@@ -16,7 +16,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.use(cors({
-  origin: corsOrigin.includes(',') ? corsOrigin.split(',') : corsOrigin as string,
+  origin: corsOrigin === '*' ? true : corsOrigin.includes(',') ? corsOrigin.split(',') : corsOrigin,
   credentials: true,
 }));
 app.use(express.json());
