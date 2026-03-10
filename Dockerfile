@@ -3,6 +3,9 @@ FROM node:20-alpine AS base
 
 WORKDIR /app
 
+# Force development mode for build stage (so devDependencies are installed)
+ENV NODE_ENV=development
+
 # Install OpenSSL for Prisma
 RUN apk add --no-cache openssl
 
@@ -53,5 +56,5 @@ RUN mkdir -p /app/uploads/products
 # Expose port
 EXPOSE 3001
 
-# Simple CMD - migrations will be handled by prisma on first connect or manually
-CMD ["node", "dist/index.js"]
+# Run migrations then start
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
