@@ -105,7 +105,7 @@ export async function publishCrudEvent(
         const body = await res.text();
         console.error(`[RabbitMQ] HTTP publish failed: ${res.status} ${res.statusText} - ${body}`);
       } else {
-        const result = await res.json();
+        const result = await res.json() as { routed: boolean };
         console.log(`[RabbitMQ] Published via HTTP: ${fullRoutingKey} (id=${event.id}, routed=${result.routed})`);
       }
     } catch (err: any) {
