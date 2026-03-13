@@ -52,6 +52,7 @@ export async function publishCrudEvent(
   data: Record<string, any>,
   actor: { id?: string; sub?: string; email?: string } | null = null
 ): Promise<CrudEvent | null> {
+  console.log(`[RabbitMQ] publishCrudEvent called: ${table}.${action}, channel=${!!channel}`);
   if (!channel) {
     console.warn(`[RabbitMQ] Channel not available: ${table}.${action}`);
     return null;
