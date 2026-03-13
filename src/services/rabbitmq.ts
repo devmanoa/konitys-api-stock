@@ -1,12 +1,11 @@
 import amqp from 'amqplib';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || '';
-const RABBITMQ_HTTP_URL = process.env.RABBITMQ_HTTP_URL || '';
 const EXCHANGE = process.env.RABBITMQ_EXCHANGE || 'platform.events';
 const APP_NAME = process.env.APP_NAME || 'stock';
 
 let connection: amqp.ChannelModel | null = null;
-let channel: amqp.Channel | null = null;
+let channel: amqp.ConfirmChannel | null = null;
 
 export async function connect(): Promise<void> {
   if (!RABBITMQ_URL) {
@@ -15,7 +14,7 @@ export async function connect(): Promise<void> {
   }
 
   connection = await amqp.connect(RABBITMQ_URL);
-  channel = await connection.createChannel();
+  channel = await connection.createConfirmChannel();
 
   await channel.assertExchange(EXCHANGE, 'topic', { durable: true });
 
@@ -53,7 +52,7 @@ export async function publishCrudEvent(
   data: Record<string, any>,
   actor: { id?: string; sub?: string; email?: string } | null = null
 ): Promise<CrudEvent | null> {
-  if (!channel && !RABBITMQ_HTTP_URL) {
+  if (!channel) {
     console.warn(`[RabbitMQ] Channel not available: ${table}.${action}`);
     return null;
   }
@@ -71,43 +70,17 @@ export async function publishCrudEvent(
 
   const fullRoutingKey = `${APP_NAME}.${table}.${action}`;
 
-  if (RABBITMQ_HTTP_URL) {
-    // Use HTTP Management API for publish (amqplib publish is broken on Node 20 + Docker bridge)
-    try {
-      const url = new URL(RABBITMQ_HTTP_URL);
-      const auth = Buffer.from(`${url.username}:${url.password}`).toString('base64');
-      const apiBase = `${url.protocol}//${url.host}`;
-
-      const res = await fetch(`${apiBase}/api/exchanges/%2f/${encodeURIComponent(EXCHANGE)}/publish`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${auth}`,
-        },
-        body: JSON.stringify({
-          properties: { delivery_mode: 2, content_type: 'application/json' },
-          routing_key: fullRoutingKey,
-          payload: JSON.stringify(event),
-          payload_encoding: 'string',
-        }),
-      });
-
-      if (!res.ok) {
-        console.error(`[RabbitMQ] HTTP publish failed: ${res.status} ${res.statusText}`);
-      } else {
-        console.log(`[RabbitMQ] Published via HTTP: ${fullRoutingKey} (id=${event.id})`);
-      }
-    } catch (err: any) {
-      console.error(`[RabbitMQ] HTTP publish error: ${err.message}`);
-    }
-  } else if (channel) {
+  try {
     channel.publish(
       EXCHANGE,
       fullRoutingKey,
       Buffer.from(JSON.stringify(event)),
       { persistent: true, contentType: 'application/json' }
     );
-    console.log(`[RabbitMQ] Published: ${fullRoutingKey} (id=${event.id})`);
+    await channel.waitForConfirms();
+    console.log(`[RabbitMQ] Published (confirmed): ${fullRoutingKey} (id=${event.id})`);
+  } catch (err: any) {
+    console.error(`[RabbitMQ] Publish failed: ${err.message}`);
   }
 
   return event;
