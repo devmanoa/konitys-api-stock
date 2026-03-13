@@ -5,7 +5,7 @@ const EXCHANGE = process.env.RABBITMQ_EXCHANGE || 'platform.events';
 const APP_NAME = process.env.APP_NAME || 'stock';
 
 let connection: amqp.ChannelModel | null = null;
-let channel: amqp.ConfirmChannel | null = null;
+let channel: amqp.Channel | null = null;
 
 export async function connect(): Promise<void> {
   if (!RABBITMQ_URL) {
@@ -14,7 +14,7 @@ export async function connect(): Promise<void> {
   }
 
   connection = await amqp.connect(RABBITMQ_URL);
-  channel = await connection.createConfirmChannel();
+  channel = await connection.createChannel();
 
   await channel.assertExchange(EXCHANGE, 'topic', { durable: true });
 
@@ -71,18 +71,13 @@ export async function publishCrudEvent(
 
   const fullRoutingKey = `${APP_NAME}.${table}.${action}`;
 
-  try {
-    channel.publish(
-      EXCHANGE,
-      fullRoutingKey,
-      Buffer.from(JSON.stringify(event)),
-      { persistent: true, contentType: 'application/json' }
-    );
-    await channel.waitForConfirms();
-    console.log(`[RabbitMQ] Published (confirmed): ${fullRoutingKey} (id=${event.id})`);
-  } catch (err: any) {
-    console.error(`[RabbitMQ] Publish failed: ${err.message}`);
-  }
+  const sent = channel.publish(
+    EXCHANGE,
+    fullRoutingKey,
+    Buffer.from(JSON.stringify(event)),
+    { persistent: true, contentType: 'application/json' }
+  );
+  console.log(`[RabbitMQ] Published: ${fullRoutingKey} (id=${event.id}, sent=${sent})`);
 
   return event;
 }
