@@ -1,6 +1,8 @@
 import amqp from 'amqplib';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || '';
+const RABBITMQ_HTTP_URL = process.env.RABBITMQ_HTTP_URL || '';
+const RABBITMQ_VHOST = process.env.RABBITMQ_VHOST || '/';
 const EXCHANGE = process.env.RABBITMQ_EXCHANGE || 'platform.events';
 const APP_NAME = process.env.APP_NAME || 'stock';
 
@@ -18,7 +20,7 @@ export async function connect(): Promise<void> {
 
   await channel.assertExchange(EXCHANGE, 'topic', { durable: true });
 
-  // Create a durable queue to capture all stock events (for other apps to consume later)
+  // Create a durable queue to capture all stock events
   const logQueue = `${APP_NAME}.events.log`;
   await channel.assertQueue(logQueue, { durable: true });
   await channel.bindQueue(logQueue, EXCHANGE, `${APP_NAME}.#`);
@@ -26,6 +28,7 @@ export async function connect(): Promise<void> {
   console.log(`[RabbitMQ] Connected to ${RABBITMQ_URL.replace(/:([^:@]+)@/, ':****@')}`);
   console.log(`[RabbitMQ] Exchange: ${EXCHANGE} (topic, durable)`);
   console.log(`[RabbitMQ] Queue: ${logQueue} bound to ${APP_NAME}.#`);
+  console.log(`[RabbitMQ] Publish mode: ${RABBITMQ_HTTP_URL ? 'HTTP Management API' : 'amqplib'}`);
 
   connection.on('error', (err: Error) => {
     console.error('[RabbitMQ] Connection error:', err.message);
@@ -58,8 +61,7 @@ export async function publishCrudEvent(
   data: Record<string, any>,
   actor: { id?: string; sub?: string; email?: string } | null = null
 ): Promise<CrudEvent | null> {
-  console.log(`[RabbitMQ] publishCrudEvent called: ${table}.${action}, channel=${!!channel}`);
-  if (!channel) {
+  if (!channel && !RABBITMQ_HTTP_URL) {
     console.warn(`[RabbitMQ] Channel not available: ${table}.${action}`);
     return null;
   }
@@ -77,13 +79,47 @@ export async function publishCrudEvent(
 
   const fullRoutingKey = `${APP_NAME}.${table}.${action}`;
 
-  const sent = channel.publish(
-    EXCHANGE,
-    fullRoutingKey,
-    Buffer.from(JSON.stringify(event)),
-    { persistent: true, contentType: 'application/json' }
-  );
-  console.log(`[RabbitMQ] Published: ${fullRoutingKey} (id=${event.id}, sent=${sent})`);
+  if (RABBITMQ_HTTP_URL) {
+    // Use HTTP Management API (amqplib publish is broken on Node.js 20 + Docker bridge)
+    try {
+      const url = new URL(RABBITMQ_HTTP_URL);
+      const auth = Buffer.from(`${url.username}:${url.password}`).toString('base64');
+      const apiBase = `${url.protocol}//${url.host}`;
+      const vhost = encodeURIComponent(RABBITMQ_VHOST);
+
+      const res = await fetch(`${apiBase}/api/exchanges/${vhost}/${encodeURIComponent(EXCHANGE)}/publish`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth}`,
+        },
+        body: JSON.stringify({
+          properties: { delivery_mode: 2, content_type: 'application/json' },
+          routing_key: fullRoutingKey,
+          payload: JSON.stringify(event),
+          payload_encoding: 'string',
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        console.error(`[RabbitMQ] HTTP publish failed: ${res.status} ${res.statusText} - ${body}`);
+      } else {
+        const result = await res.json();
+        console.log(`[RabbitMQ] Published via HTTP: ${fullRoutingKey} (id=${event.id}, routed=${result.routed})`);
+      }
+    } catch (err: any) {
+      console.error(`[RabbitMQ] HTTP publish error: ${err.message}`);
+    }
+  } else if (channel) {
+    channel.publish(
+      EXCHANGE,
+      fullRoutingKey,
+      Buffer.from(JSON.stringify(event)),
+      { persistent: true, contentType: 'application/json' }
+    );
+    console.log(`[RabbitMQ] Published: ${fullRoutingKey} (id=${event.id})`);
+  }
 
   return event;
 }
