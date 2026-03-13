@@ -18,8 +18,14 @@ export async function connect(): Promise<void> {
 
   await channel.assertExchange(EXCHANGE, 'topic', { durable: true });
 
+  // Create a durable queue to capture all stock events (for other apps to consume later)
+  const logQueue = `${APP_NAME}.events.log`;
+  await channel.assertQueue(logQueue, { durable: true });
+  await channel.bindQueue(logQueue, EXCHANGE, `${APP_NAME}.#`);
+
   console.log(`[RabbitMQ] Connected to ${RABBITMQ_URL.replace(/:([^:@]+)@/, ':****@')}`);
   console.log(`[RabbitMQ] Exchange: ${EXCHANGE} (topic, durable)`);
+  console.log(`[RabbitMQ] Queue: ${logQueue} bound to ${APP_NAME}.#`);
 
   connection.on('error', (err: Error) => {
     console.error('[RabbitMQ] Connection error:', err.message);
