@@ -149,6 +149,7 @@ model Product {
   orderTemplateItems OrderTemplateItem[]
   partCategories   ProductPartCategory[]
   comments         ProductComment[]
+  constructionBorneItems ConstructionBorneItem[]
 
   @@map("products")
 }
@@ -354,4 +355,29 @@ model ProductPartCategory {
 
   @@unique([productId, partCategoryId])
   @@map("product_part_categories")
+}
+
+model ConstructionBorne {
+  id          String                  @id @default(uuid())
+  name        String                  @unique
+  description String?
+  imageUrl    String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  items       ConstructionBorneItem[]
+
+  @@map("construction_bornes")
+}
+
+model ConstructionBorneItem {
+  id        String            @id @default(uuid())
+  borneId   String
+  borne     ConstructionBorne @relation(fields: [borneId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  section   String?
+
+  @@unique([borneId, productId])
+  @@map("construction_borne_items")
 }
