@@ -43,8 +43,23 @@ model AssemblyType {
   assemblies     AssemblyAssemblyType[]
   products       Product[]
   partCategories PartCategory[]
+  items          AssemblyTypeItem[]
 
   @@map("assembly_types")
+}
+
+model AssemblyTypeItem {
+  id             String        @id @default(uuid())
+  assemblyTypeId String
+  assemblyType   AssemblyType  @relation(fields: [assemblyTypeId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity       Int
+  sectionId      String?
+  section        BorneSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  @@unique([assemblyTypeId, productId])
+  @@map("assembly_type_items")
 }
 
 model Assembly {
@@ -149,7 +164,7 @@ model Product {
   orderTemplateItems OrderTemplateItem[]
   partCategories   ProductPartCategory[]
   comments         ProductComment[]
-  constructionBorneItems ConstructionBorneItem[]
+  assemblyTypeItems AssemblyTypeItem[]
 
   @@map("products")
 }
@@ -357,38 +372,12 @@ model ProductPartCategory {
   @@map("product_part_categories")
 }
 
-model ConstructionBorne {
-  id          String                  @id @default(uuid())
-  name        String                  @unique
-  description String?
-  imageUrl    String?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
-  items       ConstructionBorneItem[]
-
-  @@map("construction_bornes")
-}
-
-model ConstructionBorneItem {
-  id        String            @id @default(uuid())
-  borneId   String
-  borne     ConstructionBorne @relation(fields: [borneId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity  Int
-  sectionId String?
-  section   BorneSection?     @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-
-  @@unique([borneId, productId])
-  @@map("construction_borne_items")
-}
-
 model BorneSection {
-  id        String                  @id @default(uuid())
-  name      String                  @unique
-  createdAt DateTime                @default(now())
-  updatedAt DateTime                @updatedAt
-  items     ConstructionBorneItem[]
+  id        String             @id @default(uuid())
+  name      String             @unique
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  items     AssemblyTypeItem[]
 
   @@map("borne_sections")
 }

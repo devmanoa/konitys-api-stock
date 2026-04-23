@@ -9,6 +9,9 @@ import {
 
 const router = Router();
 
+// GET /api/assembly-types/buildable - Max buildable quantity per type
+router.get('/buildable', assemblyTypeController.getBuildable);
+
 // GET /api/assembly-types - List all assembly types
 router.get('/', validateQuery(querySchema), assemblyTypeController.getAll);
 
