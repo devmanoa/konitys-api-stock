@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const constructionBorneItemSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().positive('La quantité doit être positive'),
-  section: z.string().max(100).optional().nullable(),
+  sectionId: z.string().uuid().optional().nullable(),
 });
 
 export const createConstructionBorneSchema = z.object({

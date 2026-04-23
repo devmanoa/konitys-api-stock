@@ -14,6 +14,12 @@ const borneInclude = {
           imageUrl: true,
         },
       },
+      section: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
   },
 } as const;
@@ -55,10 +61,10 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           description,
           imageUrl,
           items: {
-            create: items.map((item: { productId: string; quantity: number; section?: string | null }) => ({
+            create: items.map((item: { productId: string; quantity: number; sectionId?: string | null }) => ({
               productId: item.productId,
               quantity: item.quantity,
-              section: item.section ?? null,
+              sectionId: item.sectionId ?? null,
             })),
           },
         },
@@ -90,11 +96,11 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
       if (items && items.length > 0) {
         await tx.constructionBorneItem.deleteMany({ where: { borneId: id } });
         await tx.constructionBorneItem.createMany({
-          data: items.map((item: { productId: string; quantity: number; section?: string | null }) => ({
+          data: items.map((item: { productId: string; quantity: number; sectionId?: string | null }) => ({
             borneId: id,
             productId: item.productId,
             quantity: item.quantity,
-            section: item.section ?? null,
+            sectionId: item.sectionId ?? null,
           })),
         });
       }
@@ -159,7 +165,7 @@ export const getBuildable = async (_req: Request, res: Response, next: NextFunct
           product: it.product,
           required: it.quantity,
           currentStock,
-          section: it.section,
+          section: it.section ? it.section.name : null,
         };
       });
 

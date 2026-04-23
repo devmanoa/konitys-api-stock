@@ -376,8 +376,19 @@ model ConstructionBorneItem {
   productId String
   product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity  Int
-  section   String?
+  sectionId String?
+  section   BorneSection?     @relation(fields: [sectionId], references: [id], onDelete: SetNull)
 
   @@unique([borneId, productId])
   @@map("construction_borne_items")
+}
+
+model BorneSection {
+  id        String                  @id @default(uuid())
+  name      String                  @unique
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  items     ConstructionBorneItem[]
+
+  @@map("borne_sections")
 }

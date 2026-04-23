@@ -16,6 +16,7 @@ import orderTemplateRoutes from './orderTemplates';
 import partCategoryRoutes from './partCategories';
 import userRoutes from './users';
 import constructionBorneRoutes from './constructionBornes';
+import borneSectionRoutes from './borneSections';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -46,5 +47,6 @@ router.use('/packs', packRoutes);
 router.use('/order-templates', orderTemplateRoutes);
 router.use('/users', userRoutes);
 router.use('/construction-bornes', constructionBorneRoutes);
+router.use('/borne-sections', borneSectionRoutes);
 
 export default router;
