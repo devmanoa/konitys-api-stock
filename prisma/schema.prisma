@@ -55,8 +55,8 @@ model AssemblyTypeItem {
   productId      String
   product        Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity       Int
-  sectionId      String?
-  section        BorneSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  partCategoryId String?
+  partCategory   PartCategory? @relation(fields: [partCategoryId], references: [id], onDelete: SetNull)
 
   @@unique([assemblyTypeId, productId])
   @@map("assembly_type_items")
@@ -349,13 +349,14 @@ model OrderTemplateItem {
 }
 
 model PartCategory {
-  id             String                @id @default(uuid())
-  assemblyTypeId String
-  assemblyType   AssemblyType          @relation(fields: [assemblyTypeId], references: [id], onDelete: Cascade)
-  name           String
-  description    String?
-  createdAt      DateTime              @default(now())
-  products       ProductPartCategory[]
+  id                 String                @id @default(uuid())
+  assemblyTypeId     String
+  assemblyType       AssemblyType          @relation(fields: [assemblyTypeId], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  createdAt          DateTime              @default(now())
+  products           ProductPartCategory[]
+  assemblyTypeItems  AssemblyTypeItem[]
 
   @@unique([assemblyTypeId, name])
   @@map("part_categories")
@@ -372,12 +373,3 @@ model ProductPartCategory {
   @@map("product_part_categories")
 }
 
-model BorneSection {
-  id        String             @id @default(uuid())
-  name      String             @unique
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  items     AssemblyTypeItem[]
-
-  @@map("borne_sections")
-}

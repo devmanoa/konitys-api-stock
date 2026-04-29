@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const assemblyTypeItemSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().int().positive('La quantité doit être positive'),
-  sectionId: z.string().uuid().optional().nullable(),
+  partCategoryId: z.string().uuid().optional().nullable(),
 });
 
 export const createAssemblyTypeSchema = z.object({

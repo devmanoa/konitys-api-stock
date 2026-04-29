@@ -14,7 +14,7 @@ const itemsInclude = {
           imageUrl: true,
         },
       },
-      section: {
+      partCategory: {
         select: {
           id: true,
           name: true,
@@ -114,7 +114,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
     const { name, description, items } = req.body as {
       name: string;
       description?: string | null;
-      items?: { productId: string; quantity: number; sectionId?: string | null }[];
+      items?: { productId: string; quantity: number; partCategoryId?: string | null }[];
     };
 
     const assemblyType = await prisma.$transaction(async (tx) => {
@@ -128,7 +128,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
                   create: items.map((it) => ({
                     productId: it.productId,
                     quantity: it.quantity,
-                    sectionId: it.sectionId ?? null,
+                    partCategoryId: it.partCategoryId ?? null,
                   })),
                 }
               : undefined,
@@ -151,7 +151,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     const { name, description, items } = req.body as {
       name?: string;
       description?: string | null;
-      items?: { productId: string; quantity: number; sectionId?: string | null }[];
+      items?: { productId: string; quantity: number; partCategoryId?: string | null }[];
     };
 
     const existing = await prisma.assemblyType.findUnique({ where: { id } });
@@ -170,7 +170,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
               assemblyTypeId: id,
               productId: it.productId,
               quantity: it.quantity,
-              sectionId: it.sectionId ?? null,
+              partCategoryId: it.partCategoryId ?? null,
             })),
           });
         }
@@ -243,7 +243,7 @@ export const getBuildable = async (_req: Request, res: Response, next: NextFunct
           product: it.product,
           required: it.quantity,
           currentStock,
-          section: it.section ? it.section.name : null,
+          section: it.partCategory ? it.partCategory.name : null,
         };
       });
 
