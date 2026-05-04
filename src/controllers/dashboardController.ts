@@ -156,6 +156,7 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
           take: 1,
         },
         assembly: true,
+        assemblyType: { select: { id: true, name: true } },
       },
     });
 
@@ -172,6 +173,9 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
           reference: product.reference,
           description: product.description,
           assembly: product.assembly?.name,
+          assemblyType: product.assemblyType
+            ? { id: product.assemblyType.id, name: product.assemblyType.name }
+            : null,
           qtyPerUnit: product.qtyPerUnit,
           supplyRisk: product.supplyRisk,
           minStock: product.minStock,
