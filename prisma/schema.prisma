@@ -165,8 +165,24 @@ model Product {
   partCategories   ProductPartCategory[]
   comments         ProductComment[]
   assemblyTypeItems AssemblyTypeItem[]
+  priceHistory     ProductPriceHistory[]
 
   @@map("products")
+}
+
+model ProductPriceHistory {
+  id             String   @id @default(uuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplierId     String
+  supplierName   String
+  unitPrice      Decimal  @db.Decimal(10, 2)
+  changedAt      DateTime @default(now())
+  changedById    String?
+  changedByName  String?
+
+  @@index([productId, changedAt])
+  @@map("product_price_history")
 }
 
 model ProductComment {

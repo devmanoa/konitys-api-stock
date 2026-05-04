@@ -35,19 +35,44 @@ export const addSupplier = async (req: Request, res: Response, next: NextFunctio
       });
     }
 
+    const parsedUnitPrice = unitPrice ? parseFloat(unitPrice) : null;
+
     const productSupplier = await prisma.productSupplier.create({
       data: {
         productId,
         supplierId,
         supplierRef,
-        unitPrice: unitPrice ? parseFloat(unitPrice) : null,
+        unitPrice: parsedUnitPrice,
         leadTime,
         productUrl,
         shippingCost: shippingCost ? parseFloat(shippingCost) : null,
         isPrimary: isPrimary || false,
+        priceUpdatedAt: parsedUnitPrice != null ? new Date() : null,
       },
       include: { supplier: true },
     });
+
+    // Record price history entry if a price is set and it differs from the last one
+    if (parsedUnitPrice != null) {
+      const lastEntry = await prisma.productPriceHistory.findFirst({
+        where: { productId, supplierId },
+        orderBy: { changedAt: 'desc' },
+      });
+      const previousPrice = lastEntry ? Number(lastEntry.unitPrice) : null;
+      if (previousPrice === null || previousPrice !== parsedUnitPrice) {
+        const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+        await prisma.productPriceHistory.create({
+          data: {
+            productId,
+            supplierId,
+            supplierName: supplier.name,
+            unitPrice: parsedUnitPrice,
+            changedById: authUser?.id ?? null,
+            changedByName: authUser?.fullName || authUser?.username || null,
+          },
+        });
+      }
+    }
 
     res.status(201).json({ success: true, data: productSupplier });
   } catch (error) {
@@ -73,6 +98,24 @@ export const removeSupplier = async (req: Request, res: Response, next: NextFunc
     });
 
     res.json({ success: true, message: 'Lien supprimé' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPriceHistory = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const productId = req.params.id as string;
+
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new AppError('Produit non trouvé', 404);
+
+    const history = await prisma.productPriceHistory.findMany({
+      where: { productId },
+      orderBy: { changedAt: 'asc' },
+    });
+
+    res.json({ success: true, data: history });
   } catch (error) {
     next(error);
   }

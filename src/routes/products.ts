@@ -18,6 +18,7 @@ router.delete('/:id', productController.remove);
 router.post('/:id/suppliers', productSupplierController.addSupplier);
 router.delete('/:id/suppliers/:supplierId', productSupplierController.removeSupplier);
 router.put('/:id/suppliers/:supplierId/primary', productSupplierController.setPrimary);
+router.get('/:id/price-history', productSupplierController.getPriceHistory);
 
 // Product comments
 router.get('/:id/comments', validateQuery(productCommentQuerySchema), productCommentController.getAll as any);
