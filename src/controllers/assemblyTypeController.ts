@@ -44,7 +44,6 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
           _count: {
             select: { assemblies: true },
           },
-          partCategories: true,
           ...itemsInclude,
         },
         orderBy: { name: 'asc' },
@@ -89,7 +88,6 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
             },
           },
         },
-        partCategories: true,
         ...itemsInclude,
       },
     });

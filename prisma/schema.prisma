@@ -42,7 +42,6 @@ model AssemblyType {
   createdAt      DateTime               @default(now())
   assemblies     AssemblyAssemblyType[]
   products       Product[]
-  partCategories PartCategory[]
   items          AssemblyTypeItem[]
 
   @@map("assembly_types")
@@ -366,15 +365,12 @@ model OrderTemplateItem {
 
 model PartCategory {
   id                 String                @id @default(uuid())
-  assemblyTypeId     String
-  assemblyType       AssemblyType          @relation(fields: [assemblyTypeId], references: [id], onDelete: Cascade)
-  name               String
+  name               String                @unique
   description        String?
   createdAt          DateTime              @default(now())
   products           ProductPartCategory[]
   assemblyTypeItems  AssemblyTypeItem[]
 
-  @@unique([assemblyTypeId, name])
   @@map("part_categories")
 }
 

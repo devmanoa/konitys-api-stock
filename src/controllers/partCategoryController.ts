@@ -2,13 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 
-// Get all part categories for an assembly type
-export const getAll = async (req: Request, res: Response, next: NextFunction) => {
+// Get all part categories
+export const getAll = async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const assemblyTypeId = req.params.assemblyTypeId as string;
-
     const categories = await prisma.partCategory.findMany({
-      where: { assemblyTypeId },
       include: {
         _count: {
           select: { products: true },
@@ -26,18 +23,10 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
 // Create a part category
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const assemblyTypeId = req.params.assemblyTypeId as string;
     const { name, description } = req.body;
-
-    // Check assembly type exists
-    const assemblyType = await prisma.assemblyType.findUnique({ where: { id: assemblyTypeId } });
-    if (!assemblyType) {
-      throw new AppError('Type de borne non trouvé', 404);
-    }
 
     const category = await prisma.partCategory.create({
       data: {
-        assemblyTypeId,
         name,
         description,
       },

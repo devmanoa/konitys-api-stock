@@ -38,7 +38,6 @@ router.use('/import', importRoutes);
 router.use('/export', exportRoutes);
 router.use('/assemblies', assemblyRoutes);
 router.use('/assembly-types', assemblyTypeRoutes);
-router.use('/assembly-types/:assemblyTypeId/part-categories', partCategoryRoutes);
 router.use('/part-categories', partCategoryRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/packs', packRoutes);

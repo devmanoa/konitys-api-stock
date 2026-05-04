@@ -3,12 +3,12 @@ import * as partCategoryController from '../controllers/partCategoryController';
 import { validateBody } from '../middleware/validation';
 import { createPartCategorySchema, updatePartCategorySchema } from '../schemas/partCategory';
 
-const router = Router({ mergeParams: true });
+const router = Router();
 
-// GET /assembly-types/:assemblyTypeId/part-categories
+// GET /part-categories
 router.get('/', partCategoryController.getAll as any);
 
-// POST /assembly-types/:assemblyTypeId/part-categories
+// POST /part-categories
 router.post('/', validateBody(createPartCategorySchema) as any, partCategoryController.create as any);
 
 // PUT /part-categories/:id
