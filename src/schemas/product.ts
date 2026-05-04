@@ -12,6 +12,7 @@ export const createProductSchema = z.object({
   imageUrl: z.string().optional().or(z.literal('')).transform(val => val || undefined),
   minStock: z.number().int().min(0).optional().nullable(),
   partCategoryIds: z.array(z.string().uuid()).optional(),
+  hasSerialNumber: z.boolean().optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial();

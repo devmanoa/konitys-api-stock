@@ -185,6 +185,9 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     const id = req.params.id as string;
     const { partCategoryIds, ...data } = req.body;
 
+    const previous = await prisma.product.findUnique({ where: { id } });
+    if (!previous) throw new AppError('Produit non trouvé', 404);
+
     const product = await prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
@@ -200,6 +203,24 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
               partCategoryId: catId,
             })),
           });
+        }
+      }
+
+      // hasSerialNumber transitioning from false to true: spawn one ProductSerialItem
+      // per existing unit per site, with serialNumber = null (to be filled later)
+      if (data.hasSerialNumber === true && previous.hasSerialNumber === false) {
+        const stocks = await tx.stock.findMany({ where: { productId: id } });
+        const seedRows: { productId: string; condition: 'NEW' | 'USED'; siteId: string }[] = [];
+        for (const s of stocks) {
+          for (let i = 0; i < s.quantityNew; i++) {
+            seedRows.push({ productId: id, condition: 'NEW', siteId: s.siteId });
+          }
+          for (let i = 0; i < s.quantityUsed; i++) {
+            seedRows.push({ productId: id, condition: 'USED', siteId: s.siteId });
+          }
+        }
+        if (seedRows.length > 0) {
+          await tx.productSerialItem.createMany({ data: seedRows });
         }
       }
 

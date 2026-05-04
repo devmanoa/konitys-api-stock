@@ -24,6 +24,14 @@ enum ProductCondition {
   USED
 }
 
+enum SerialStatus {
+  IN_STOCK
+  OUT
+  IN_REPAIR
+  SCRAPPED
+  LOST
+}
+
 enum OrderStatus {
   PENDING
   COMPLETED
@@ -135,6 +143,7 @@ model Site {
   targetMovements StockMovement[] @relation("TargetSite")
   orders          Order[]
   orderTemplates  OrderTemplate[]
+  serialItems     ProductSerialItem[]
 
   @@map("sites")
 }
@@ -165,8 +174,32 @@ model Product {
   comments         ProductComment[]
   assemblyTypeItems AssemblyTypeItem[]
   priceHistory     ProductPriceHistory[]
+  hasSerialNumber  Boolean              @default(false)
+  serialItems      ProductSerialItem[]
 
   @@map("products")
+}
+
+model ProductSerialItem {
+  id            String           @id @default(uuid())
+  productId     String
+  product       Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  serialNumber  String?
+  condition     ProductCondition
+  siteId        String?
+  site          Site?            @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  status        SerialStatus     @default(IN_STOCK)
+  enteredAt     DateTime         @default(now())
+  exitedAt      DateTime?
+  customerName  String?
+  comment       String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([productId, serialNumber])
+  @@index([productId, status])
+  @@index([siteId, status])
+  @@map("product_serial_items")
 }
 
 model ProductPriceHistory {

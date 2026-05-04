@@ -15,6 +15,7 @@ import packRoutes from './packs';
 import orderTemplateRoutes from './orderTemplates';
 import partCategoryRoutes from './partCategories';
 import userRoutes from './users';
+import { serialItemsForProductRouter, serialItemsRouter } from './serialItems';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -27,6 +28,8 @@ router.get('/health', (req, res) => {
 // Apply authentication to all routes below
 router.use(authenticate as any);
 
+router.use('/products/:id/serial-items', serialItemsForProductRouter);
+router.use('/serial-items', serialItemsRouter);
 router.use('/products', productRoutes);
 router.use('/suppliers', supplierRoutes);
 router.use('/sites', siteRoutes);

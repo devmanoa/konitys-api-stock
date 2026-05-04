@@ -82,9 +82,16 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const data: CreateMovementInput = req.body;
+    const data: CreateMovementInput & {
+      serialNumbers?: string[];
+      serialItemIds?: string[];
+      customerName?: string;
+    } = req.body;
     const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
     const operator = authUser?.fullName || authUser?.username || null;
+
+    const product = await prisma.product.findUnique({ where: { id: data.productId } });
+    if (!product) throw new AppError('Produit non trouvé', 404);
 
     // Transaction pour créer le mouvement et mettre à jour les stocks
     const result = await prisma.$transaction(async (tx) => {
@@ -148,6 +155,65 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
             [quantityField]: { increment: data.quantity },
           },
         });
+      }
+
+      // Serial-tracked products: handle individual items
+      if (product.hasSerialNumber) {
+        if (data.type === 'IN') {
+          const targetSiteId = data.targetSiteId!;
+          const numbers = (data.serialNumbers || []).map((s) => s.trim()).filter((s) => s.length > 0);
+          // Create one ProductSerialItem per unit, filling with provided numbers, padding with nulls
+          const rows: { productId: string; serialNumber: string | null; condition: 'NEW' | 'USED'; siteId: string }[] = [];
+          for (let i = 0; i < data.quantity; i++) {
+            rows.push({
+              productId: data.productId,
+              serialNumber: i < numbers.length ? numbers[i] : null,
+              condition: data.condition,
+              siteId: targetSiteId,
+            });
+          }
+          for (const row of rows) {
+            // Use individual create instead of createMany to surface unique violations cleanly
+            await tx.productSerialItem.create({
+              data: { ...row, status: 'IN_STOCK' },
+            });
+          }
+        } else if (data.type === 'OUT' || data.type === 'TRANSFER') {
+          const ids = data.serialItemIds || [];
+          if (ids.length !== data.quantity) {
+            throw new AppError(
+              `La quantité (${data.quantity}) ne correspond pas au nombre de numéros de série sélectionnés (${ids.length})`,
+              400,
+            );
+          }
+          const items = await tx.productSerialItem.findMany({
+            where: { id: { in: ids }, productId: data.productId },
+          });
+          if (items.length !== ids.length) {
+            throw new AppError('Un ou plusieurs numéros de série sélectionnés sont introuvables', 400);
+          }
+          if (data.type === 'OUT') {
+            for (const it of items) {
+              await tx.productSerialItem.update({
+                where: { id: it.id },
+                data: {
+                  status: 'OUT',
+                  siteId: null,
+                  exitedAt: new Date(),
+                  customerName: data.customerName || null,
+                },
+              });
+            }
+          } else {
+            // TRANSFER: keep IN_STOCK but move siteId
+            for (const it of items) {
+              await tx.productSerialItem.update({
+                where: { id: it.id },
+                data: { siteId: data.targetSiteId! },
+              });
+            }
+          }
+        }
       }
 
       return movement;
