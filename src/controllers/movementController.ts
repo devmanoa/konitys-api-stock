@@ -83,6 +83,8 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data: CreateMovementInput = req.body;
+    const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
+    const operator = authUser?.fullName || authUser?.username || null;
 
     // Transaction pour créer le mouvement et mettre à jour les stocks
     const result = await prisma.$transaction(async (tx) => {
@@ -96,7 +98,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           quantity: data.quantity,
           condition: data.condition,
           movementDate: data.movementDate,
-          operator: data.operator,
+          operator,
           comment: data.comment,
         },
         include: {
