@@ -82,7 +82,9 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { items, ...headerData } = req.body;
+    const { items, createdBy: _ignored, ...headerData } = req.body;
+    const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
+    const createdBy = authUser?.fullName || authUser?.username || null;
 
     const order = await prisma.$transaction(async (tx) => {
       // Generate orderNumber: CMD-YYYY-NNNN
@@ -110,6 +112,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         data: {
           ...headerData,
           orderNumber,
+          createdBy,
           items: {
             create: items.map((item: { productId: string; quantity: number; unitPrice?: number }) => ({
               productId: item.productId,
