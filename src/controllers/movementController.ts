@@ -35,7 +35,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
           sourceSite: true,
           targetSite: true,
         },
-        orderBy: { movementDate: 'desc' },
+        orderBy: [{ movementDate: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
