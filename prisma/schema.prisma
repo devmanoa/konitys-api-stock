@@ -398,7 +398,10 @@ model OrderTemplateItem {
 
 model PartCategory {
   id                 String                @id @default(uuid())
-  name               String                @unique
+  // Uniqueness is enforced case-insensitively at the DB level
+  // via a UNIQUE INDEX on LOWER(name) (see migration
+  // 20260505100000_dedupe_part_categories_case_insensitive).
+  name               String
   description        String?
   createdAt          DateTime              @default(now())
   products           ProductPartCategory[]
