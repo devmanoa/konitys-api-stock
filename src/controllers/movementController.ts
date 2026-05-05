@@ -85,7 +85,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
     const data: CreateMovementInput & {
       serialNumbers?: string[];
       serialItemIds?: string[];
-      customerName?: string;
+      borneNumber?: string;
     } = req.body;
     const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
     const operator = authUser?.fullName || authUser?.username || null;
@@ -200,7 +200,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
                   status: 'OUT',
                   siteId: null,
                   exitedAt: new Date(),
-                  customerName: data.customerName || null,
+                  borneNumber: data.borneNumber || null,
                 },
               });
             }

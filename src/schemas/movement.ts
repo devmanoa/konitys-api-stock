@@ -13,7 +13,7 @@ export const createMovementSchema = z.object({
   // Serial-tracked products only
   serialNumbers: z.array(z.string().max(100)).optional(),
   serialItemIds: z.array(z.string().uuid()).optional(),
-  customerName: z.string().max(200).optional(),
+  borneNumber: z.string().max(200).optional(),
 }).refine((data) => {
   // Pour un transfert, source et cible sont requis
   if (data.type === 'TRANSFER') {

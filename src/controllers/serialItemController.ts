@@ -20,7 +20,7 @@ export const listForProduct = async (req: Request, res: Response, next: NextFunc
     if (search) {
       where.OR = [
         { serialNumber: { contains: search as string, mode: 'insensitive' } },
-        { customerName: { contains: search as string, mode: 'insensitive' } },
+        { borneNumber: { contains: search as string, mode: 'insensitive' } },
       ];
     }
 
@@ -39,7 +39,7 @@ export const listForProduct = async (req: Request, res: Response, next: NextFunc
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const productId = req.params.id as string;
-    const { serialNumber, condition, siteId, status, customerName, comment } = req.body;
+    const { serialNumber, condition, siteId, status, borneNumber, comment } = req.body;
 
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new AppError('Produit non trouvé', 404);
@@ -51,7 +51,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         condition,
         siteId: siteId || null,
         status: status || 'IN_STOCK',
-        customerName: customerName || null,
+        borneNumber: borneNumber || null,
         comment: comment || null,
       },
       include: serialInclude,
@@ -72,7 +72,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
 
     const data: any = {};
     const body = req.body as Record<string, unknown>;
-    for (const k of ['serialNumber', 'condition', 'siteId', 'status', 'customerName', 'comment']) {
+    for (const k of ['serialNumber', 'condition', 'siteId', 'status', 'borneNumber', 'comment']) {
       if (k in body) {
         const v = body[k];
         data[k] = v === '' ? null : v ?? null;

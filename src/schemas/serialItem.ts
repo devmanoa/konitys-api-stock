@@ -8,7 +8,7 @@ export const createSerialItemSchema = z.object({
   condition: conditionEnum,
   siteId: z.string().uuid().optional().nullable(),
   status: serialStatusEnum.optional(),
-  customerName: z.string().max(200).optional().nullable(),
+  borneNumber: z.string().max(200).optional().nullable(),
   comment: z.string().max(2000).optional().nullable(),
 });
 
@@ -17,7 +17,7 @@ export const updateSerialItemSchema = z.object({
   condition: conditionEnum.optional(),
   siteId: z.string().uuid().optional().nullable(),
   status: serialStatusEnum.optional(),
-  customerName: z.string().max(200).optional().nullable(),
+  borneNumber: z.string().max(200).optional().nullable(),
   comment: z.string().max(2000).optional().nullable(),
 });
 

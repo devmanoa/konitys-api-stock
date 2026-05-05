@@ -191,7 +191,7 @@ model ProductSerialItem {
   status        SerialStatus     @default(IN_STOCK)
   enteredAt     DateTime         @default(now())
   exitedAt      DateTime?
-  customerName  String?
+  borneNumber   String?
   comment       String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
