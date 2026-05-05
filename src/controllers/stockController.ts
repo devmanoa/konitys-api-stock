@@ -39,14 +39,18 @@ export const getSnapshot = async (req: Request, res: Response, next: NextFunctio
     if (!dateParam) {
       return res.status(400).json({ success: false, error: 'Paramètre `date` requis (YYYY-MM-DD)' });
     }
-    const parsed = new Date(dateParam);
-    if (isNaN(parsed.getTime())) {
+    // Expect strict YYYY-MM-DD; build the cutoff at end-of-day in UTC so the
+    // result is independent of the server's local timezone (Coolify
+    // containers may be UTC, Europe/Paris, etc.).
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateParam);
+    if (!m) {
+      return res.status(400).json({ success: false, error: 'Date invalide (format attendu : YYYY-MM-DD)' });
+    }
+    const [, y, mo, d] = m;
+    const cutoff = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), 23, 59, 59, 999));
+    if (isNaN(cutoff.getTime())) {
       return res.status(400).json({ success: false, error: 'Date invalide' });
     }
-    // Snapshot at the END of the requested day (so movements that happen on
-    // that same day are included).
-    const cutoff = new Date(parsed);
-    cutoff.setHours(23, 59, 59, 999);
 
     const [currentStocks, futureMovements] = await Promise.all([
       prisma.stock.findMany({
