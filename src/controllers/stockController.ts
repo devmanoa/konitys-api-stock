@@ -31,6 +31,152 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
+// Reconstruct stock at a past date by replaying every StockMovement that
+// happened *after* the requested date in reverse on top of the current stock.
+export const getSnapshot = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const dateParam = req.query.date as string | undefined;
+    if (!dateParam) {
+      return res.status(400).json({ success: false, error: 'Paramètre `date` requis (YYYY-MM-DD)' });
+    }
+    const parsed = new Date(dateParam);
+    if (isNaN(parsed.getTime())) {
+      return res.status(400).json({ success: false, error: 'Date invalide' });
+    }
+    // Snapshot at the END of the requested day (so movements that happen on
+    // that same day are included).
+    const cutoff = new Date(parsed);
+    cutoff.setHours(23, 59, 59, 999);
+
+    const [currentStocks, futureMovements] = await Promise.all([
+      prisma.stock.findMany({
+        include: {
+          product: {
+            include: {
+              assemblyType: true,
+              assembly: {
+                include: {
+                  assemblyTypes: {
+                    include: { assemblyType: true },
+                  },
+                },
+              },
+            },
+          },
+          site: true,
+        },
+        orderBy: [
+          { product: { reference: 'asc' } },
+          { site: { name: 'asc' } },
+        ],
+      }),
+      prisma.stockMovement.findMany({
+        where: { movementDate: { gt: cutoff } },
+        select: {
+          productId: true,
+          type: true,
+          sourceSiteId: true,
+          targetSiteId: true,
+          quantity: true,
+          condition: true,
+        },
+      }),
+    ]);
+
+    // Build a map keyed by `${productId}|${siteId}` so we can look up the
+    // existing Stock row and amend its quantities. We also have to add rows
+    // for (product, site) pairs that have a non-zero past stock but zero
+    // current stock — those don't appear in `currentStocks` at all.
+    type SnapshotRow = (typeof currentStocks)[number] & { quantityNew: number; quantityUsed: number };
+    const map = new Map<string, SnapshotRow>();
+    for (const s of currentStocks) {
+      map.set(`${s.productId}|${s.siteId}`, { ...s });
+    }
+
+    const productCache = new Map<string, (typeof currentStocks)[number]['product']>();
+    const siteCache = new Map<string, (typeof currentStocks)[number]['site']>();
+    for (const s of currentStocks) {
+      productCache.set(s.productId, s.product);
+      siteCache.set(s.siteId, s.site);
+    }
+
+    const ensureRow = async (productId: string, siteId: string): Promise<SnapshotRow | null> => {
+      const key = `${productId}|${siteId}`;
+      const existing = map.get(key);
+      if (existing) return existing;
+
+      // Need to synthesize a stock row for a (product, site) that no longer
+      // has any stock today. Lazy-load the product and site once.
+      let product = productCache.get(productId);
+      if (!product) {
+        const p = await prisma.product.findUnique({
+          where: { id: productId },
+          include: {
+            assemblyType: true,
+            assembly: {
+              include: {
+                assemblyTypes: {
+                  include: { assemblyType: true },
+                },
+              },
+            },
+          },
+        });
+        if (!p) return null;
+        product = p;
+        productCache.set(productId, p);
+      }
+      let site = siteCache.get(siteId);
+      if (!site) {
+        const s = await prisma.site.findUnique({ where: { id: siteId } });
+        if (!s) return null;
+        site = s;
+        siteCache.set(siteId, s);
+      }
+      const synthesized = {
+        id: `synth-${productId}-${siteId}`,
+        productId,
+        siteId,
+        product,
+        site,
+        quantityNew: 0,
+        quantityUsed: 0,
+        updatedAt: cutoff,
+      } as unknown as SnapshotRow;
+      map.set(key, synthesized);
+      return synthesized;
+    };
+
+    // Replay each future movement in reverse: undo its effect on stock.
+    for (const m of futureMovements) {
+      const field = m.condition === 'NEW' ? 'quantityNew' : 'quantityUsed';
+
+      // A movement that took stock OUT of sourceSite after D — at D the
+      // source still had that stock, so add it back.
+      if (m.sourceSiteId) {
+        const row = await ensureRow(m.productId, m.sourceSiteId);
+        if (row) row[field] += m.quantity;
+      }
+      // A movement that brought stock INTO targetSite after D — at D the
+      // target didn't yet have it, so subtract.
+      if (m.targetSiteId) {
+        const row = await ensureRow(m.productId, m.targetSiteId);
+        if (row) row[field] -= m.quantity;
+      }
+    }
+
+    // Drop rows where both quantities ended up at zero (or negative — could
+    // happen with legacy data) so the UI doesn't show ghost zero-rows.
+    const data = Array.from(map.values()).filter(
+      (r) => r.quantityNew !== 0 || r.quantityUsed !== 0,
+    );
+
+    res.json({ success: true, data, snapshotDate: cutoff.toISOString() });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getByProduct = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const productId = req.params.productId as string;
