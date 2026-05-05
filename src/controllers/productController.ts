@@ -6,7 +6,7 @@ import { publishCrudEvent } from '../services/rabbitmq';
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page, limit, search, supplyRisk, supplierId, assemblyId, assemblyTypeId, sortBy, sortOrder } = (req as any).parsedQuery as ProductQueryInput;
+    const { page, limit, search, supplyRisk, supplierId, assemblyId, assemblyTypeId, partCategoryId, sortBy, sortOrder } = (req as any).parsedQuery as ProductQueryInput;
 
     const where: any = {};
 
@@ -32,6 +32,12 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
     if (supplierId) {
       where.productSuppliers = {
         some: { supplierId },
+      };
+    }
+
+    if (partCategoryId) {
+      where.partCategories = {
+        some: { partCategoryId },
       };
     }
 

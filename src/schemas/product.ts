@@ -25,6 +25,7 @@ export const productQuerySchema = z.object({
   supplierId: z.string().uuid().optional(),
   assemblyId: z.string().uuid().optional(),
   assemblyTypeId: z.string().uuid().optional(),
+  partCategoryId: z.string().uuid().optional(),
   sortBy: z.string().default('reference'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
 });
