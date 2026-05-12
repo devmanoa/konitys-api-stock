@@ -26,6 +26,10 @@ export const productQuerySchema = z.object({
   assemblyId: z.string().uuid().optional(),
   assemblyTypeId: z.string().uuid().optional(),
   partCategoryId: z.string().uuid().optional(),
+  hasSerialNumber: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
   sortBy: z.string().default('reference'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
 });
