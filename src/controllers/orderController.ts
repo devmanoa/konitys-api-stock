@@ -181,6 +181,9 @@ export const receiveItem = async (req: Request, res: Response, next: NextFunctio
       throw new AppError('Site de destination non défini. Veuillez sélectionner un site.', 400);
     }
 
+    const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
+    const operator = authUser?.fullName || authUser?.username || order.responsible || null;
+
     const result = await prisma.$transaction(async (tx) => {
       // Mettre à jour l'item
       await tx.orderItem.update({
@@ -201,7 +204,7 @@ export const receiveItem = async (req: Request, res: Response, next: NextFunctio
           quantity: receivedQty,
           condition: condition || 'NEW',
           movementDate: new Date(receivedDate),
-          operator: order.responsible,
+          operator,
           comment: comment || `Réception commande ${order.orderNumber}`,
         },
       });
@@ -282,6 +285,9 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
       throw new AppError('Site de destination non défini. Veuillez sélectionner un site.', 400);
     }
 
+    const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
+    const operator = authUser?.fullName || authUser?.username || order.responsible || null;
+
     // Vérifier que tous les items existent et sont en attente
     const pendingItemsMap = new Map(
       order.items.filter((i) => i.receivedQty === null).map((i) => [i.id, i])
@@ -320,7 +326,7 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
             quantity: ri.receivedQty,
             condition: conditionValue,
             movementDate: dateObj,
-            operator: order.responsible,
+            operator,
             comment: comment || `Réception globale commande ${order.orderNumber}`,
           },
         });
