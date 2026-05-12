@@ -172,6 +172,7 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
           id: product.id,
           reference: product.reference,
           description: product.description,
+          imageUrl: product.imageUrl,
           assembly: product.assembly?.name,
           assemblyType: product.assemblyType
             ? { id: product.assemblyType.id, name: product.assemblyType.name }
