@@ -87,8 +87,10 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
       serialItemIds?: string[];
       borneNumber?: string;
     } = req.body;
-    const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
     const operator = authUser?.fullName || authUser?.username || null;
+    const createdById = authUser?.id || null;
+    const createdByName = operator;
 
     const product = await prisma.product.findUnique({ where: { id: data.productId } });
     if (!product) throw new AppError('Produit non trouvé', 404);
@@ -175,7 +177,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           for (const row of rows) {
             // Use individual create instead of createMany to surface unique violations cleanly
             await tx.productSerialItem.create({
-              data: { ...row, status: 'IN_STOCK' },
+              data: { ...row, status: 'IN_STOCK', createdById, createdByName },
             });
           }
         } else if (data.type === 'OUT' || data.type === 'TRANSFER') {

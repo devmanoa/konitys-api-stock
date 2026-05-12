@@ -194,6 +194,8 @@ model ProductSerialItem {
   borneNumber   String?
   comment       String?
   createdAt     DateTime         @default(now())
+  createdById   String?
+  createdByName String?
   updatedAt     DateTime         @updatedAt
 
   @@unique([productId, serialNumber])

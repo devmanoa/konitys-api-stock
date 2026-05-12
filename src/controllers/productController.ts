@@ -219,14 +219,23 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
       // hasSerialNumber transitioning from false to true: spawn one ProductSerialItem
       // per existing unit per site, with serialNumber = null (to be filled later)
       if (data.hasSerialNumber === true && previous.hasSerialNumber === false) {
+        const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+        const createdById = authUser?.id || null;
+        const createdByName = authUser?.fullName || authUser?.username || null;
         const stocks = await tx.stock.findMany({ where: { productId: id } });
-        const seedRows: { productId: string; condition: 'NEW' | 'USED'; siteId: string }[] = [];
+        const seedRows: {
+          productId: string;
+          condition: 'NEW' | 'USED';
+          siteId: string;
+          createdById: string | null;
+          createdByName: string | null;
+        }[] = [];
         for (const s of stocks) {
           for (let i = 0; i < s.quantityNew; i++) {
-            seedRows.push({ productId: id, condition: 'NEW', siteId: s.siteId });
+            seedRows.push({ productId: id, condition: 'NEW', siteId: s.siteId, createdById, createdByName });
           }
           for (let i = 0; i < s.quantityUsed; i++) {
-            seedRows.push({ productId: id, condition: 'USED', siteId: s.siteId });
+            seedRows.push({ productId: id, condition: 'USED', siteId: s.siteId, createdById, createdByName });
           }
         }
         if (seedRows.length > 0) {

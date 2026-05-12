@@ -44,6 +44,10 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new AppError('Produit non trouvé', 404);
 
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+    const createdById = authUser?.id || null;
+    const createdByName = authUser?.fullName || authUser?.username || null;
+
     const item = await prisma.productSerialItem.create({
       data: {
         productId,
@@ -53,6 +57,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         status: status || 'IN_STOCK',
         borneNumber: borneNumber || null,
         comment: comment || null,
+        createdById,
+        createdByName,
       },
       include: serialInclude,
     });
