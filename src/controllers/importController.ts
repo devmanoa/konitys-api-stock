@@ -308,6 +308,8 @@ async function importProductSuppliers(workbook: XLSX.WorkBook, result: ImportRes
       });
 
       if (existing) {
+        const priceChanged =
+          unitPrice != null && Number(existing.unitPrice ?? 0) !== Number(unitPrice);
         await prisma.productSupplier.update({
           where: { id: existing.id },
           data: {
@@ -317,6 +319,10 @@ async function importProductSuppliers(workbook: XLSX.WorkBook, result: ImportRes
             shippingCost,
             supplierRef,
             productUrl,
+            ...(priceChanged && { priceUpdatedAt: new Date() }),
+            ...(existing.priceUpdatedAt == null && unitPrice != null && {
+              priceUpdatedAt: new Date(),
+            }),
           },
         });
         result.productSuppliers.updated++;
@@ -327,6 +333,7 @@ async function importProductSuppliers(workbook: XLSX.WorkBook, result: ImportRes
             supplierId: supplier.id,
             isPrimary,
             unitPrice,
+            priceUpdatedAt: unitPrice != null ? new Date() : null,
             leadTime,
             shippingCost,
             supplierRef,
