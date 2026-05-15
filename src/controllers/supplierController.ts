@@ -22,7 +22,9 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
       where.productSuppliers = {
         some: {
           product: {
-            assemblyTypeId: assemblyTypeId as string,
+            assemblyTypes: {
+              some: { assemblyTypeId: assemblyTypeId as string },
+            },
           },
         },
       };
@@ -70,7 +72,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
             product: {
               include: {
                 assembly: true,
-                assemblyType: true,
+                assemblyTypes: { include: { assemblyType: true } },
               },
             },
           },

@@ -10,6 +10,7 @@ export const exportProducts = async (req: Request, res: Response, next: NextFunc
     const products = await prisma.product.findMany({
       include: {
         assembly: true,
+        assemblyTypes: { include: { assemblyType: true } },
         productSuppliers: {
           include: { supplier: true },
           where: { isPrimary: true },
@@ -33,6 +34,7 @@ export const exportProducts = async (req: Request, res: Response, next: NextFunc
       'Référence produit',
       'Description',
       'Type de produit',
+      'Type de borne',
       'Qté 1 borne',
       'Risque appro',
       'Emplacement',
@@ -52,11 +54,13 @@ export const exportProducts = async (req: Request, res: Response, next: NextFunc
 
     const headers = [...baseHeaders, ...stockHeaders];
 
-    // Build data rows
-    const rows = products.map(product => {
+    // Build data rows — one row per (product, assemblyType). If a product
+    // has no linked type, still emit one row with empty type/qty.
+    const rows: any[][] = [];
+    products.forEach(product => {
       const primarySupplier = product.productSuppliers[0];
 
-      // Calculate total stocks
+      // Calculate total stocks (same total for all (product, type) rows of a product)
       let totalNew = 0;
       let totalUsed = 0;
       const stockBySite: Record<string, { new: number; used: number }> = {};
@@ -71,31 +75,40 @@ export const exportProducts = async (req: Request, res: Response, next: NextFunc
       });
 
       const total = totalNew + totalUsed;
-      const possibleUnits = product.qtyPerUnit > 0 ? Math.floor(total / product.qtyPerUnit) : 0;
 
-      const baseData = [
-        product.reference,
-        product.description || '',
-        product.assembly?.name || '',
-        product.qtyPerUnit,
-        mapRiskToFrench(product.supplyRisk),
-        product.location || '',
-        primarySupplier?.supplier?.name || '',
-        primarySupplier?.unitPrice ? Number(primarySupplier.unitPrice) : '',
-        primarySupplier?.leadTime || '',
-        primarySupplier?.shippingCost ? Number(primarySupplier.shippingCost) : '',
-      ];
+      const typeLinks = product.assemblyTypes.length > 0
+        ? product.assemblyTypes
+        : [{ assemblyType: null as any, qtyPerUnit: 0 }];
 
-      // Add stock data for each site
-      const stockData: (number | string)[] = [];
-      sites.forEach(site => {
-        const siteStock = stockBySite[site.name] || { new: 0, used: 0 };
-        stockData.push(siteStock.new || '');
-        stockData.push(siteStock.used || '');
+      typeLinks.forEach(link => {
+        const qty = link.qtyPerUnit;
+        const possibleUnits = qty > 0 ? Math.floor(total / qty) : 0;
+
+        const baseData = [
+          product.reference,
+          product.description || '',
+          product.assembly?.name || '',
+          link.assemblyType?.name || '',
+          qty || '',
+          mapRiskToFrench(product.supplyRisk),
+          product.location || '',
+          primarySupplier?.supplier?.name || '',
+          primarySupplier?.unitPrice ? Number(primarySupplier.unitPrice) : '',
+          primarySupplier?.leadTime || '',
+          primarySupplier?.shippingCost ? Number(primarySupplier.shippingCost) : '',
+        ];
+
+        // Add stock data for each site
+        const stockData: (number | string)[] = [];
+        sites.forEach(site => {
+          const siteStock = stockBySite[site.name] || { new: 0, used: 0 };
+          stockData.push(siteStock.new || '');
+          stockData.push(siteStock.used || '');
+        });
+        stockData.push(totalNew || '', totalUsed || '', total || '', possibleUnits || '');
+
+        rows.push([...baseData, ...stockData]);
       });
-      stockData.push(totalNew || '', totalUsed || '', total || '', possibleUnits || '');
-
-      return [...baseData, ...stockData];
     });
 
     // Create workbook
@@ -366,6 +379,7 @@ export const exportAll = async (req: Request, res: Response, next: NextFunction)
     const products = await prisma.product.findMany({
       include: {
         assembly: true,
+        assemblyTypes: { include: { assemblyType: true } },
         productSuppliers: {
           include: { supplier: true },
           where: { isPrimary: true },
@@ -382,7 +396,7 @@ export const exportAll = async (req: Request, res: Response, next: NextFunction)
     });
 
     const syntheseHeaders = [
-      'Référence produit', 'Description', 'Type de produit', 'Qté 1 borne', 'Risque appro', 'Emplacement',
+      'Référence produit', 'Description', 'Type de produit', 'Type de borne', 'Qté 1 borne', 'Risque appro', 'Emplacement',
       'Fournisseur principal', 'PA unit.', 'Délai appro', 'Frais livraison',
     ];
     sites.forEach(site => {
@@ -390,7 +404,8 @@ export const exportAll = async (req: Request, res: Response, next: NextFunction)
     });
     syntheseHeaders.push('Stock total neuf', 'Stock total occasion', 'Stock total', 'Bornes possibles');
 
-    const syntheseRows = products.map(product => {
+    const syntheseRows: any[][] = [];
+    products.forEach(product => {
       const ps = product.productSuppliers[0];
       const stockBySite: Record<string, { new: number; used: number }> = {};
       let totalNew = 0, totalUsed = 0;
@@ -401,23 +416,31 @@ export const exportAll = async (req: Request, res: Response, next: NextFunction)
         stockBySite[s.site.name] = { new: s.quantityNew, used: s.quantityUsed };
       });
 
-      const row: any[] = [
-        product.reference, product.description || '', product.assembly?.name || '',
-        product.qtyPerUnit, mapRiskToFrench(product.supplyRisk), product.location || '',
-        ps?.supplier?.name || '', ps?.unitPrice ? Number(ps.unitPrice) : '',
-        ps?.leadTime || '', ps?.shippingCost ? Number(ps.shippingCost) : '',
-      ];
+      const typeLinks = product.assemblyTypes.length > 0
+        ? product.assemblyTypes
+        : [{ assemblyType: null as any, qtyPerUnit: 0 }];
 
-      sites.forEach(site => {
-        const ss = stockBySite[site.name] || { new: 0, used: 0 };
-        row.push(ss.new || '', ss.used || '');
+      typeLinks.forEach(link => {
+        const qty = link.qtyPerUnit;
+        const row: any[] = [
+          product.reference, product.description || '', product.assembly?.name || '',
+          link.assemblyType?.name || '',
+          qty || '', mapRiskToFrench(product.supplyRisk), product.location || '',
+          ps?.supplier?.name || '', ps?.unitPrice ? Number(ps.unitPrice) : '',
+          ps?.leadTime || '', ps?.shippingCost ? Number(ps.shippingCost) : '',
+        ];
+
+        sites.forEach(site => {
+          const ss = stockBySite[site.name] || { new: 0, used: 0 };
+          row.push(ss.new || '', ss.used || '');
+        });
+
+        const total = totalNew + totalUsed;
+        row.push(totalNew || '', totalUsed || '', total || '');
+        row.push(qty > 0 ? Math.floor(total / qty) || '' : '');
+
+        syntheseRows.push(row);
       });
-
-      const total = totalNew + totalUsed;
-      row.push(totalNew || '', totalUsed || '', total || '');
-      row.push(product.qtyPerUnit > 0 ? Math.floor(total / product.qtyPerUnit) || '' : '');
-
-      return row;
     });
 
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([syntheseHeaders, ...syntheseRows]), 'SYNTHESE');

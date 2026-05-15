@@ -49,10 +49,21 @@ model AssemblyType {
   description    String?
   createdAt      DateTime               @default(now())
   assemblies     AssemblyAssemblyType[]
-  products       Product[]
+  products       ProductAssemblyType[]
   items          AssemblyTypeItem[]
 
   @@map("assembly_types")
+}
+
+model ProductAssemblyType {
+  productId      String
+  assemblyTypeId String
+  qtyPerUnit     Int          @default(1)
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  assemblyType   AssemblyType @relation(fields: [assemblyTypeId], references: [id], onDelete: Cascade)
+
+  @@id([productId, assemblyTypeId])
+  @@map("product_assembly_types")
 }
 
 model AssemblyTypeItem {
@@ -152,13 +163,10 @@ model Product {
   id               String            @id @default(uuid())
   reference        String            @unique
   description      String?
-  qtyPerUnit       Int               @default(1)
   supplyRisk       SupplyRisk?
   location         String?
   assemblyId       String?
   assembly         Assembly?         @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
-  assemblyTypeId   String?
-  assemblyType     AssemblyType?     @relation(fields: [assemblyTypeId], references: [id], onDelete: SetNull)
   comment          String?
   imageUrl         String?
   minStock         Int?
@@ -173,6 +181,7 @@ model Product {
   partCategories   ProductPartCategory[]
   comments         ProductComment[]
   assemblyTypeItems AssemblyTypeItem[]
+  assemblyTypes    ProductAssemblyType[]
   priceHistory     ProductPriceHistory[]
   hasSerialNumber  Boolean              @default(false)
   serialItems      ProductSerialItem[]

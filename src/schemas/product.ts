@@ -3,11 +3,17 @@ import { z } from 'zod';
 export const createProductSchema = z.object({
   reference: z.string().min(1, 'La référence est requise').max(50),
   description: z.string().max(255).optional(),
-  qtyPerUnit: z.number().int().positive().default(1),
   supplyRisk: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   location: z.string().max(20).optional(),
   assemblyId: z.string().uuid().optional().nullable().transform(val => val || undefined),
-  assemblyTypeId: z.string().uuid().optional().nullable().transform(val => val || undefined),
+  assemblyTypes: z
+    .array(
+      z.object({
+        assemblyTypeId: z.string().uuid(),
+        qtyPerUnit: z.number().int().positive().default(1),
+      }),
+    )
+    .optional(),
   comment: z.string().optional(),
   imageUrl: z.string().optional().or(z.literal('')).transform(val => val || undefined),
   minStock: z.number().int().min(0).optional().nullable(),

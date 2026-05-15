@@ -26,7 +26,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
     }
 
     if (assemblyTypeId) {
-      where.assemblyTypeId = assemblyTypeId;
+      where.assemblyTypes = { some: { assemblyTypeId } };
     }
 
     if (supplierId) {
@@ -68,7 +68,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
               },
             },
           },
-          assemblyType: true,
+          assemblyTypes: { include: { assemblyType: true } },
           productSuppliers: productSuppliersInclude as any,
           stocks: {
             include: { site: true },
@@ -113,7 +113,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
             },
           },
         },
-        assemblyType: true,
+        assemblyTypes: { include: { assemblyType: true } },
         productSuppliers: {
           include: { supplier: true },
         },
@@ -155,12 +155,12 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { partCategoryIds, ...data } = req.body;
+    const { partCategoryIds, assemblyTypes: typesInput, ...data } = req.body;
 
     const product = await prisma.$transaction(async (tx) => {
       const created = await tx.product.create({
         data,
-        include: { assembly: true, assemblyType: true },
+        include: { assembly: true },
       });
 
       if (partCategoryIds && partCategoryIds.length > 0) {
@@ -172,11 +172,22 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         });
       }
 
+      if (Array.isArray(typesInput) && typesInput.length > 0) {
+        await tx.productAssemblyType.createMany({
+          data: typesInput.map((t: { assemblyTypeId: string; qtyPerUnit?: number }) => ({
+            productId: created.id,
+            assemblyTypeId: t.assemblyTypeId,
+            qtyPerUnit: Math.max(1, Number(t.qtyPerUnit) || 1),
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       return tx.product.findUnique({
         where: { id: created.id },
         include: {
           assembly: true,
-          assemblyType: true,
+          assemblyTypes: { include: { assemblyType: true } },
           partCategories: { include: { partCategory: true } },
         },
       });
@@ -193,7 +204,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 export const update = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
-    const { partCategoryIds, ...data } = req.body;
+    const { partCategoryIds, assemblyTypes: typesInput, ...data } = req.body;
 
     const previous = await prisma.product.findUnique({ where: { id } });
     if (!previous) throw new AppError('Produit non trouvé', 404);
@@ -212,6 +223,20 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
               productId: id,
               partCategoryId: catId,
             })),
+          });
+        }
+      }
+
+      if (typesInput !== undefined) {
+        await tx.productAssemblyType.deleteMany({ where: { productId: id } });
+        if (Array.isArray(typesInput) && typesInput.length > 0) {
+          await tx.productAssemblyType.createMany({
+            data: typesInput.map((t: { assemblyTypeId: string; qtyPerUnit?: number }) => ({
+              productId: id,
+              assemblyTypeId: t.assemblyTypeId,
+              qtyPerUnit: Math.max(1, Number(t.qtyPerUnit) || 1),
+            })),
+            skipDuplicates: true,
           });
         }
       }
@@ -247,7 +272,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
         where: { id },
         include: {
           assembly: true,
-          assemblyType: true,
+          assemblyTypes: { include: { assemblyType: true } },
           partCategories: { include: { partCategory: true } },
         },
       });

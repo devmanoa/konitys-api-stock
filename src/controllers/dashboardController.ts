@@ -40,7 +40,10 @@ export const getStats = async (req: Request, res: Response, next: NextFunction) 
       }),
       prisma.product.count({ where: { supplyRisk: 'HIGH' } }),
       prisma.product.findMany({
-        select: { id: true, qtyPerUnit: true },
+        select: {
+          id: true,
+          assemblyTypes: { select: { qtyPerUnit: true } },
+        },
       }),
     ]);
 
@@ -71,13 +74,15 @@ export const getStats = async (req: Request, res: Response, next: NextFunction) 
       });
     });
 
-    // Calculer "bornes possibles" (total stock / qtyPerUnit) comme dans script.gs
+    // "Unités possibles" = min(qtyPerUnit) across the product's assembly types
     let totalPossibleUnits = 0;
     productsWithQty.forEach((product) => {
       const stockData = productStockMap.get(product.id);
-      if (stockData && product.qtyPerUnit > 0) {
+      const qtys = product.assemblyTypes.map((t) => t.qtyPerUnit).filter((q) => q > 0);
+      if (stockData && qtys.length > 0) {
+        const minQty = Math.min(...qtys);
         const totalQty = stockData.new + stockData.used;
-        totalPossibleUnits += Math.floor(totalQty / product.qtyPerUnit);
+        totalPossibleUnits += Math.floor(totalQty / minQty);
       }
     });
 
@@ -156,7 +161,9 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
           take: 1,
         },
         assembly: true,
-        assemblyType: { select: { id: true, name: true } },
+        assemblyTypes: {
+          include: { assemblyType: { select: { id: true, name: true } } },
+        },
       },
     });
 
@@ -166,7 +173,11 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
         const totalNew = product.stocks.reduce((sum: number, s: any) => sum + s.quantityNew, 0);
         const totalUsed = product.stocks.reduce((sum: number, s: any) => sum + s.quantityUsed, 0);
         const total = totalNew + totalUsed;
-        const possibleUnits = product.qtyPerUnit > 0 ? Math.floor(total / product.qtyPerUnit) : 0;
+        const qtys = product.assemblyTypes.map((t) => t.qtyPerUnit).filter((q) => q > 0);
+        const minQty = qtys.length > 0 ? Math.min(...qtys) : 0;
+        const possibleUnits = minQty > 0 ? Math.floor(total / minQty) : 0;
+        // For UI compatibility, expose the first linked type as 'assemblyType'
+        const firstType = product.assemblyTypes[0]?.assemblyType || null;
 
         return {
           id: product.id,
@@ -174,10 +185,13 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
           description: product.description,
           imageUrl: product.imageUrl,
           assembly: product.assembly?.name,
-          assemblyType: product.assemblyType
-            ? { id: product.assemblyType.id, name: product.assemblyType.name }
-            : null,
-          qtyPerUnit: product.qtyPerUnit,
+          assemblyType: firstType ? { id: firstType.id, name: firstType.name } : null,
+          assemblyTypes: product.assemblyTypes.map((t) => ({
+            id: t.assemblyType.id,
+            name: t.assemblyType.name,
+            qtyPerUnit: t.qtyPerUnit,
+          })),
+          qtyPerUnit: minQty,
           supplyRisk: product.supplyRisk,
           minStock: product.minStock,
           totalNew,

@@ -7,7 +7,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
       include: {
         product: {
           include: {
-            assemblyType: true,
+            assemblyTypes: { include: { assemblyType: true } },
             assembly: {
               include: {
                 assemblyTypes: {
@@ -57,7 +57,7 @@ export const getSnapshot = async (req: Request, res: Response, next: NextFunctio
         include: {
           product: {
             include: {
-              assemblyType: true,
+              assemblyTypes: { include: { assemblyType: true } },
               assembly: {
                 include: {
                   assemblyTypes: {
@@ -116,7 +116,7 @@ export const getSnapshot = async (req: Request, res: Response, next: NextFunctio
         const p = await prisma.product.findUnique({
           where: { id: productId },
           include: {
-            assemblyType: true,
+            assemblyTypes: { include: { assemblyType: true } },
             assembly: {
               include: {
                 assemblyTypes: {
@@ -259,17 +259,20 @@ export const getAlerts = async (req: Request, res: Response, next: NextFunction)
           include: { supplier: true },
           take: 1,
         },
+        assemblyTypes: { select: { qtyPerUnit: true } },
       },
     });
 
-    // Filtrer les produits avec stock total <= qtyPerUnit * 5 (seuil arbitraire)
+    // Filtrer les produits avec stock total <= min(qtyPerUnit) * 5 (seuil arbitraire)
     const alerts = products
       .map((product) => {
         const totalStock = product.stocks.reduce(
           (sum, s) => sum + s.quantityNew + s.quantityUsed,
           0
         );
-        const threshold = product.qtyPerUnit * 5;
+        const qtys = product.assemblyTypes.map((t) => t.qtyPerUnit).filter((q) => q > 0);
+        const minQty = qtys.length > 0 ? Math.min(...qtys) : 1;
+        const threshold = minQty * 5;
         return {
           ...product,
           totalStock,

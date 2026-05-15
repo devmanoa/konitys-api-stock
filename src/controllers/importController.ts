@@ -243,7 +243,6 @@ async function importProducts(workbook: XLSX.WorkBook, result: ImportResult) {
       const productData = {
         reference,
         description: row['Description']?.toString() || row['Désignation']?.toString() || null,
-        qtyPerUnit: parseInt(row['Qté 1 borne']) || parseInt(row['Qté']) || 1,
         supplyRisk: mapSupplyRisk(row['Risque appro'] || row['Risque']),
         location: row['Emplacement']?.toString() || row['Location']?.toString() || null,
         comment: row['Commentaire']?.toString() || row['Notes']?.toString() || null,
@@ -754,6 +753,10 @@ async function importFlatFormat(workbook: any, result: ImportResult) {
       // --- Product ---
       try {
         const existing = await prisma.product.findUnique({ where: { reference } });
+        const qtyForRow = Math.max(
+          1,
+          parseInt(row['Quantité pour 1 borne']) || parseInt(row['Qté 1 borne']) || 1,
+        );
 
         if (existing) {
           // Product already exists: only update imageUrl if we have a new image
@@ -761,24 +764,44 @@ async function importFlatFormat(workbook: any, result: ImportResult) {
           if (imageData) {
             updateData.imageUrl = saveProductImage(imageData.buffer, imageData.ext);
           }
-          // Always update assemblyTypeId
-          updateData.assemblyTypeId = assemblyType.id;
-          await prisma.product.update({ where: { reference }, data: updateData });
+          if (Object.keys(updateData).length > 0) {
+            await prisma.product.update({ where: { reference }, data: updateData });
+          }
+          // Upsert the (product, assemblyType) link with the row's qtyPerUnit
+          await prisma.productAssemblyType.upsert({
+            where: {
+              productId_assemblyTypeId: {
+                productId: existing.id,
+                assemblyTypeId: assemblyType.id,
+              },
+            },
+            create: {
+              productId: existing.id,
+              assemblyTypeId: assemblyType.id,
+              qtyPerUnit: qtyForRow,
+            },
+            update: { qtyPerUnit: qtyForRow },
+          });
           result.products.updated++;
         } else {
           // New product: create with all fields
           const productData: any = {
             reference,
             description: row['Description']?.toString() || null,
-            qtyPerUnit: parseInt(row['Quantité pour 1 borne']) || parseInt(row['Qté 1 borne']) || 1,
             supplyRisk: mapSupplyRisk(row['Risques appro'] || row['Risque appro']),
             location: (row['Emplacement de stockage'] || row['Emplacement'])?.toString() || null,
-            assemblyTypeId: assemblyType.id,
           };
           if (imageData) {
             productData.imageUrl = saveProductImage(imageData.buffer, imageData.ext);
           }
-          await prisma.product.create({ data: productData });
+          const created = await prisma.product.create({ data: productData });
+          await prisma.productAssemblyType.create({
+            data: {
+              productId: created.id,
+              assemblyTypeId: assemblyType.id,
+              qtyPerUnit: qtyForRow,
+            },
+          });
           result.products.created++;
         }
       } catch (error: any) {
