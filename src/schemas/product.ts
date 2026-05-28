@@ -16,6 +16,7 @@ export const createProductSchema = z.object({
     .optional(),
   comment: z.string().optional(),
   imageUrl: z.string().optional().or(z.literal('')).transform(val => val || undefined),
+  externalUrl: z.string().url('URL invalide').max(2048).optional().or(z.literal('')).transform(val => val || null).nullable(),
   minStock: z.number().int().min(0).optional().nullable(),
   partCategoryIds: z.array(z.string().uuid()).optional(),
   hasSerialNumber: z.boolean().optional(),

@@ -20,6 +20,9 @@ router.delete('/:id/suppliers/:supplierId', productSupplierController.removeSupp
 router.put('/:id/suppliers/:supplierId/primary', productSupplierController.setPrimary);
 router.get('/:id/price-history', productSupplierController.getPriceHistory);
 
+// Audit log (modifications timeline)
+router.get('/:id/audit-log', productController.getAuditLog);
+
 // Product comments
 router.get('/:id/comments', validateQuery(productCommentQuerySchema), productCommentController.getAll as any);
 router.post('/:id/comments', validateBody(createProductCommentSchema), productCommentController.create as any);

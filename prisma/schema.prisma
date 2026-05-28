@@ -169,6 +169,7 @@ model Product {
   assembly         Assembly?         @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
   comment          String?
   imageUrl         String?
+  externalUrl      String?
   minStock         Int?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -185,8 +186,30 @@ model Product {
   priceHistory     ProductPriceHistory[]
   hasSerialNumber  Boolean              @default(false)
   serialItems      ProductSerialItem[]
+  auditLog         ProductAuditLog[]
 
   @@map("products")
+}
+
+model ProductAuditLog {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Type of change: 'created' | 'updated' | 'field' | 'assembly_type_added' | 'assembly_type_removed' |
+  /// 'assembly_type_qty' | 'part_category_added' | 'part_category_removed' | 'supplier_added' |
+  /// 'supplier_removed'
+  action      String
+  /// Name of the field for action='field' (e.g. 'reference', 'minStock', 'description').
+  /// Otherwise the entity name involved (e.g. assembly type name, category name, supplier name).
+  field       String?
+  oldValue    String?
+  newValue    String?
+  changedAt   DateTime @default(now())
+  changedById String?
+  changedByName String?
+
+  @@index([productId, changedAt])
+  @@map("product_audit_log")
 }
 
 model ProductSerialItem {

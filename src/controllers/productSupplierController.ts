@@ -74,6 +74,21 @@ export const addSupplier = async (req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // Audit log: supplier linked
+    {
+      const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+      await prisma.productAuditLog.create({
+        data: {
+          productId,
+          action: 'supplier_added',
+          field: supplier.name,
+          newValue: parsedUnitPrice != null ? `${parsedUnitPrice.toFixed(2)} €` : null,
+          changedById: authUser?.id ?? null,
+          changedByName: authUser?.fullName || authUser?.username || null,
+        },
+      });
+    }
+
     res.status(201).json({ success: true, data: productSupplier });
   } catch (error) {
     next(error);
@@ -87,6 +102,7 @@ export const removeSupplier = async (req: Request, res: Response, next: NextFunc
 
     const link = await prisma.productSupplier.findUnique({
       where: { productId_supplierId: { productId, supplierId } },
+      include: { supplier: true },
     });
 
     if (!link) {
@@ -96,6 +112,21 @@ export const removeSupplier = async (req: Request, res: Response, next: NextFunc
     await prisma.productSupplier.delete({
       where: { productId_supplierId: { productId, supplierId } },
     });
+
+    // Audit log: supplier unlinked
+    {
+      const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+      await prisma.productAuditLog.create({
+        data: {
+          productId,
+          action: 'supplier_removed',
+          field: link.supplier.name,
+          oldValue: link.unitPrice != null ? `${Number(link.unitPrice).toFixed(2)} €` : null,
+          changedById: authUser?.id ?? null,
+          changedByName: authUser?.fullName || authUser?.username || null,
+        },
+      });
+    }
 
     res.json({ success: true, message: 'Lien supprimé' });
   } catch (error) {

@@ -3,6 +3,11 @@ import prisma from '../config/database';
 import { ProductQueryInput } from '../schemas/product';
 import { AppError } from '../middleware/errorHandler';
 import { publishCrudEvent } from '../services/rabbitmq';
+import {
+  diffScalars,
+  diffAssemblyTypes,
+  diffPartCategories,
+} from '../services/productAudit';
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -156,6 +161,11 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { partCategoryIds, assemblyTypes: typesInput, ...data } = req.body;
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+    const who = {
+      id: authUser?.id ?? null,
+      name: authUser?.fullName || authUser?.username || null,
+    };
 
     const product = await prisma.$transaction(async (tx) => {
       const created = await tx.product.create({
@@ -183,6 +193,16 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         });
       }
 
+      // Audit log: a single 'created' entry, then one entry per non-default field
+      await tx.productAuditLog.create({
+        data: {
+          productId: created.id,
+          action: 'created',
+          changedById: who.id,
+          changedByName: who.name,
+        },
+      });
+
       return tx.product.findUnique({
         where: { id: created.id },
         include: {
@@ -205,9 +225,26 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
   try {
     const id = req.params.id as string;
     const { partCategoryIds, assemblyTypes: typesInput, ...data } = req.body;
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+    const who = {
+      id: authUser?.id ?? null,
+      name: authUser?.fullName || authUser?.username || null,
+    };
 
-    const previous = await prisma.product.findUnique({ where: { id } });
+    const previous = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        assemblyTypes: { include: { assemblyType: true } },
+        partCategories: true,
+      },
+    });
     if (!previous) throw new AppError('Produit non trouvé', 404);
+
+    // Reference data needed by diffs to resolve names from ids
+    const [allTypes, allCategories] = await Promise.all([
+      prisma.assemblyType.findMany({ select: { id: true, name: true } }),
+      prisma.partCategory.findMany({ select: { id: true, name: true } }),
+    ]);
 
     const product = await prisma.$transaction(async (tx) => {
       await tx.product.update({
@@ -244,9 +281,8 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
       // hasSerialNumber transitioning from false to true: spawn one ProductSerialItem
       // per existing unit per site, with serialNumber = null (to be filled later)
       if (data.hasSerialNumber === true && previous.hasSerialNumber === false) {
-        const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
-        const createdById = authUser?.id || null;
-        const createdByName = authUser?.fullName || authUser?.username || null;
+        const createdById = who.id;
+        const createdByName = who.name;
         const stocks = await tx.stock.findMany({ where: { productId: id } });
         const seedRows: {
           productId: string;
@@ -268,6 +304,28 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
         }
       }
 
+      // Audit log — emit one row per detected change
+      const auditEntries = [
+        ...diffScalars(id, previous as any, data, who),
+        ...diffAssemblyTypes(
+          id,
+          (previous.assemblyTypes as any) || [],
+          typesInput,
+          allTypes,
+          who,
+        ),
+        ...diffPartCategories(
+          id,
+          (previous.partCategories || []).map((pc: any) => pc.partCategoryId),
+          partCategoryIds,
+          allCategories,
+          who,
+        ),
+      ];
+      if (auditEntries.length > 0) {
+        await tx.productAuditLog.createMany({ data: auditEntries });
+      }
+
       return tx.product.findUnique({
         where: { id },
         include: {
@@ -281,6 +339,21 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     publishCrudEvent('products', 'updated', product as any, (req as any).user);
 
     res.json({ success: true, data: product });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAuditLog = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const product = await prisma.product.findUnique({ where: { id }, select: { id: true } });
+    if (!product) throw new AppError('Produit non trouvé', 404);
+    const entries = await prisma.productAuditLog.findMany({
+      where: { productId: id },
+      orderBy: { changedAt: 'desc' },
+    });
+    res.json({ success: true, data: entries });
   } catch (error) {
     next(error);
   }
