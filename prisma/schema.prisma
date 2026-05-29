@@ -169,7 +169,7 @@ model Product {
   assembly         Assembly?         @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
   comment          String?
   imageUrl         String?
-  externalUrl      String?
+  externalLinks    ProductExternalLink[]
   minStock         Int?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -189,6 +189,18 @@ model Product {
   auditLog         ProductAuditLog[]
 
   @@map("products")
+}
+
+model ProductExternalLink {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, position])
+  @@map("product_external_links")
 }
 
 model ProductAuditLog {

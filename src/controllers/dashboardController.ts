@@ -203,10 +203,17 @@ export const getLowStockAlerts = async (req: Request, res: Response, next: NextF
         };
       })
       .filter((p) => {
-        // Alerter uniquement si un seuil critique est défini et que le stock est en dessous
         const hasCriticalThreshold = p.minStock != null && p.minStock > 0;
         const isBelowThreshold = hasCriticalThreshold && p.total <= p.minStock!;
-        return isBelowThreshold || p.supplyRisk === 'HIGH';
+        // Alerter si:
+        //  - un seuil critique est défini et le stock est en dessous (l'utilisateur surveille
+        //    explicitement ce produit, même si total = 0)
+        //  - OU le produit est à risque HIGH ET il reste du stock à surveiller
+        // Un produit HIGH déjà à 0 sans seuil défini n'est plus en alerte: trop tard pour
+        // réagir, ça pollue la liste.
+        if (isBelowThreshold) return true;
+        if (p.supplyRisk === 'HIGH' && p.total > 0) return true;
+        return false;
       })
       .sort((a, b) => {
         // Trier par risque puis par stock

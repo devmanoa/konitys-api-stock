@@ -7,6 +7,7 @@ import {
   diffScalars,
   diffAssemblyTypes,
   diffPartCategories,
+  diffExternalLinks,
 } from '../services/productAudit';
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
@@ -81,6 +82,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
           partCategories: {
             include: { partCategory: true },
           },
+          externalLinks: { orderBy: { position: 'asc' } },
         },
         orderBy: { [sortBy || 'reference']: sortOrder || 'asc' },
         skip: (page - 1) * limit,
@@ -145,6 +147,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
         partCategories: {
           include: { partCategory: true },
         },
+        externalLinks: { orderBy: { position: 'asc' } },
       },
     });
 
@@ -160,7 +163,12 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { partCategoryIds, assemblyTypes: typesInput, ...data } = req.body;
+    const {
+      partCategoryIds,
+      assemblyTypes: typesInput,
+      externalLinks: linksInput,
+      ...data
+    } = req.body;
     const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
     const who = {
       id: authUser?.id ?? null,
@@ -178,6 +186,16 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           data: partCategoryIds.map((catId: string) => ({
             productId: created.id,
             partCategoryId: catId,
+          })),
+        });
+      }
+
+      if (Array.isArray(linksInput) && linksInput.length > 0) {
+        await tx.productExternalLink.createMany({
+          data: linksInput.map((url: string, i: number) => ({
+            productId: created.id,
+            url,
+            position: i,
           })),
         });
       }
@@ -209,6 +227,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           assembly: true,
           assemblyTypes: { include: { assemblyType: true } },
           partCategories: { include: { partCategory: true } },
+          externalLinks: { orderBy: { position: 'asc' } },
         },
       });
     });
@@ -224,7 +243,12 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 export const update = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
-    const { partCategoryIds, assemblyTypes: typesInput, ...data } = req.body;
+    const {
+      partCategoryIds,
+      assemblyTypes: typesInput,
+      externalLinks: linksInput,
+      ...data
+    } = req.body;
     const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
     const who = {
       id: authUser?.id ?? null,
@@ -236,6 +260,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
       include: {
         assemblyTypes: { include: { assemblyType: true } },
         partCategories: true,
+        externalLinks: { orderBy: { position: 'asc' } },
       },
     });
     if (!previous) throw new AppError('Produit non trouvé', 404);
@@ -274,6 +299,19 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
               qtyPerUnit: Math.max(1, Number(t.qtyPerUnit) || 1),
             })),
             skipDuplicates: true,
+          });
+        }
+      }
+
+      if (linksInput !== undefined) {
+        await tx.productExternalLink.deleteMany({ where: { productId: id } });
+        if (Array.isArray(linksInput) && linksInput.length > 0) {
+          await tx.productExternalLink.createMany({
+            data: linksInput.map((url: string, i: number) => ({
+              productId: id,
+              url,
+              position: i,
+            })),
           });
         }
       }
@@ -321,6 +359,12 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
           allCategories,
           who,
         ),
+        ...diffExternalLinks(
+          id,
+          (previous.externalLinks || []).map((l: any) => l.url),
+          linksInput,
+          who,
+        ),
       ];
       if (auditEntries.length > 0) {
         await tx.productAuditLog.createMany({ data: auditEntries });
@@ -332,6 +376,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
           assembly: true,
           assemblyTypes: { include: { assemblyType: true } },
           partCategories: { include: { partCategory: true } },
+          externalLinks: { orderBy: { position: 'asc' } },
         },
       });
     });

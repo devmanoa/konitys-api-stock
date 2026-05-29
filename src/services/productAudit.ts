@@ -33,7 +33,6 @@ const TRACKED_SCALAR_FIELDS = [
   'location',
   'comment',
   'imageUrl',
-  'externalUrl',
   'minStock',
   'hasSerialNumber',
   'assemblyId',
@@ -118,6 +117,44 @@ export function diffAssemblyTypes(
         field: nameOf(id),
         oldValue: String(prevMap.get(id)),
         newValue: String(qty),
+        ...baseWho,
+      });
+    }
+  }
+  return entries;
+}
+
+export function diffExternalLinks(
+  productId: string,
+  previous: string[] | null,
+  next: string[] | undefined,
+  who: { id?: string | null; name?: string | null },
+): AuditEntryBase[] {
+  if (!next) return [];
+  const entries: AuditEntryBase[] = [];
+  const prev = new Set(previous || []);
+  const cur = new Set(next);
+  const baseWho = { changedById: who.id ?? null, changedByName: who.name ?? null };
+  for (const url of prev) {
+    if (!cur.has(url)) {
+      entries.push({
+        productId,
+        action: 'external_link_removed',
+        field: 'Lien externe',
+        oldValue: url,
+        newValue: null,
+        ...baseWho,
+      });
+    }
+  }
+  for (const url of cur) {
+    if (!prev.has(url)) {
+      entries.push({
+        productId,
+        action: 'external_link_added',
+        field: 'Lien externe',
+        oldValue: null,
+        newValue: url,
         ...baseWho,
       });
     }
