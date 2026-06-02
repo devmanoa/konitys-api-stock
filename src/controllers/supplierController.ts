@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { publishCrudEvent } from '../services/rabbitmq';
+import { lookupBySiret, searchByText } from '../services/companyLookup';
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -131,6 +132,62 @@ export const getReceptionAnomalies = async (req: Request, res: Response, next: N
   }
 };
 
+/**
+ * GET /suppliers/company-search?q=...
+ * Public, gateway-style — proxies recherche-entreprises.api.gouv.fr so the
+ * client doesn't have to deal with CORS or rate-limit attribution.
+ */
+export const companySearch = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const q = (req.query.q as string) || '';
+    const hits = await searchByText(q, 5);
+    res.json({ success: true, data: hits });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /suppliers/:id/refresh-company-info
+ * Re-fetches and persists the company data using the supplier's stored SIRET
+ * (or the one provided in the body if no SIRET is set yet).
+ */
+export const refreshCompanyInfo = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const supplier = await prisma.supplier.findUnique({ where: { id } });
+    if (!supplier) throw new AppError('Fournisseur non trouvé', 404);
+    const siret = (req.body?.siret as string) || supplier.siret;
+    if (!siret) {
+      throw new AppError('SIREN/SIRET requis pour la recherche', 400);
+    }
+    const info = await lookupBySiret(siret);
+    if (!info) {
+      throw new AppError('Aucune entreprise trouvée pour ce numéro', 404);
+    }
+    const updated = await prisma.supplier.update({
+      where: { id },
+      data: {
+        siret: info.siret ?? supplier.siret,
+        siren: info.siren ?? supplier.siren,
+        legalName: info.legalName ?? supplier.legalName,
+        legalStatus: info.legalStatus ?? supplier.legalStatus,
+        naf: info.naf ?? supplier.naf,
+        nafLabel: info.nafLabel ?? supplier.nafLabel,
+        creationYear: info.creationYear ?? supplier.creationYear,
+        // Don't overwrite the user-edited contact address unless it was empty
+        address: supplier.address || info.address || null,
+        postalCode: supplier.postalCode || info.postalCode || null,
+        city: supplier.city || info.city || null,
+        companyInfoUpdatedAt: new Date(),
+      },
+    });
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const supplier = await prisma.supplier.create({
@@ -148,6 +205,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 export const update = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
+    const previous = await prisma.supplier.findUnique({ where: { id } });
 
     const supplier = await prisma.supplier.update({
       where: { id },
@@ -155,6 +213,34 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     });
 
     publishCrudEvent('suppliers', 'updated', supplier, (req as any).user);
+
+    // Fire-and-forget company info refresh when the SIRET was just added or
+    // changed. Don't block the response — if the API is slow or down, the
+    // user's edit still succeeds and they can hit the manual refresh later.
+    const newSiret = (req.body?.siret as string) || null;
+    const prevSiret = previous?.siret || null;
+    if (newSiret && newSiret !== prevSiret) {
+      lookupBySiret(newSiret)
+        .then(async (info) => {
+          if (!info) return;
+          await prisma.supplier.update({
+            where: { id },
+            data: {
+              siret: info.siret ?? newSiret,
+              siren: info.siren ?? null,
+              legalName: info.legalName ?? null,
+              legalStatus: info.legalStatus ?? null,
+              naf: info.naf ?? null,
+              nafLabel: info.nafLabel ?? null,
+              creationYear: info.creationYear ?? null,
+              companyInfoUpdatedAt: new Date(),
+            },
+          });
+        })
+        .catch(() => {
+          // best-effort — ignore failures
+        });
+    }
 
     res.json({ success: true, data: supplier });
   } catch (error) {

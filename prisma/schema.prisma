@@ -119,11 +119,29 @@ model Supplier {
   longitude        Decimal?          @db.Decimal(11, 8)
   comment          String?
   createdAt        DateTime          @default(now())
+  // --- Company data fetched from recherche-entreprises.api.gouv.fr ---
+  /// SIRET du siège (14 chiffres). Si renseigné, sert de clef pour le rafraîchissement.
+  siret            String?
+  /// SIREN (9 chiffres). Dérivé du SIRET (9 premiers chiffres) si disponible.
+  siren            String?
+  /// Nom officiel renvoyé par l'API.
+  legalName        String?
+  /// État administratif : "A" actif, "C" cessé / fermé.
+  legalStatus      String?
+  /// Code NAF (ex 6201Z).
+  naf              String?
+  /// Libellé d'activité du NAF.
+  nafLabel         String?
+  /// Année de création (extraite de la date de création de l'entreprise).
+  creationYear     Int?
+  /// Date du dernier fetch des données officielles.
+  companyInfoUpdatedAt DateTime?
   productSuppliers ProductSupplier[]
   orders           Order[]
   contacts         SupplierContact[]
   orderTemplates   OrderTemplate[]
 
+  @@index([siret])
   @@map("suppliers")
 }
 

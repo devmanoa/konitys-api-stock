@@ -28,6 +28,17 @@ export const createSupplierSchema = z.object({
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   comment: z.string().optional(),
+  // Company identifiers (free-form lookup against api.gouv.fr)
+  siret: z
+    .string()
+    .max(14)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v.replace(/\D/g, '') : v))
+    .refine(
+      (v) => !v || v.length === 9 || v.length === 14,
+      'SIREN (9 chiffres) ou SIRET (14 chiffres) attendu',
+    ),
 });
 
 export const updateSupplierSchema = createSupplierSchema.partial();
