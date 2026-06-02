@@ -8,6 +8,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
         product: {
           include: {
             assemblyTypes: { include: { assemblyType: true } },
+            storageLocation: { include: { site: true, parent: { include: { site: true } } } },
             assembly: {
               include: {
                 assemblyTypes: {
@@ -58,6 +59,7 @@ export const getSnapshot = async (req: Request, res: Response, next: NextFunctio
           product: {
             include: {
               assemblyTypes: { include: { assemblyType: true } },
+            storageLocation: { include: { site: true, parent: { include: { site: true } } } },
               assembly: {
                 include: {
                   assemblyTypes: {
@@ -117,6 +119,7 @@ export const getSnapshot = async (req: Request, res: Response, next: NextFunctio
           where: { id: productId },
           include: {
             assemblyTypes: { include: { assemblyType: true } },
+            storageLocation: { include: { site: true, parent: { include: { site: true } } } },
             assembly: {
               include: {
                 assemblyTypes: {

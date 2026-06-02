@@ -156,8 +156,33 @@ model Site {
   orders          Order[]
   orderTemplates  OrderTemplate[]
   serialItems     ProductSerialItem[]
+  locations       Location[]
 
   @@map("sites")
+}
+
+/// Hierarchical storage location attached to a Site.
+/// Self-referencing: a level-1 entry (e.g. "Allée 1") may or may not have children
+/// (e.g. "Rack A"). A Product points to either a level-1 (when no children exist)
+/// or a level-2 (sub-location) entry — never both.
+model Location {
+  id        String     @id @default(uuid())
+  siteId    String?
+  site      Site?      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Location?  @relation("LocationChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Location[] @relation("LocationChildren")
+  name      String
+  position  Int        @default(0)
+  createdAt DateTime   @default(now())
+  products  Product[]
+
+  // A given name is unique within its (site, parent) scope. Postgres allows
+  // multiple NULL parentIds without violating the unique index — so two level-1
+  // siblings can share a name only if they belong to different sites.
+  @@unique([siteId, parentId, name])
+  @@index([siteId, parentId])
+  @@map("locations")
 }
 
 model Product {
@@ -166,6 +191,8 @@ model Product {
   description      String?
   supplyRisk       SupplyRisk?
   location         String?
+  locationId       String?
+  storageLocation  Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
   assemblyId       String?
   assembly         Assembly?         @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
   comment          String?

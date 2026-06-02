@@ -83,6 +83,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
             include: { partCategory: true },
           },
           externalLinks: { orderBy: { position: 'asc' } },
+          storageLocation: { include: { site: true, parent: { include: { site: true } } } },
         },
         orderBy: { [sortBy || 'reference']: sortOrder || 'asc' },
         skip: (page - 1) * limit,
@@ -148,6 +149,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
           include: { partCategory: true },
         },
         externalLinks: { orderBy: { position: 'asc' } },
+        storageLocation: { include: { site: true, parent: { include: { site: true } } } },
       },
     });
 

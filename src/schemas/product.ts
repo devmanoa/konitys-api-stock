@@ -5,6 +5,7 @@ export const createProductSchema = z.object({
   description: z.string().max(255).optional(),
   supplyRisk: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   location: z.string().max(20).optional(),
+  locationId: z.string().uuid().optional().nullable(),
   assemblyId: z.string().uuid().optional().nullable().transform(val => val || undefined),
   assemblyTypes: z
     .array(
