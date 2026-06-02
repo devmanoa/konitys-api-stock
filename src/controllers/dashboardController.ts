@@ -109,6 +109,8 @@ export const getStats = async (req: Request, res: Response, next: NextFunction) 
 
 export const getRecentMovements = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // 30 most recent across all types so the dashboard can split by type
+    // (IN / OUT / TRANSFER) and still show ~5 per block in the common case.
     const movements = await prisma.stockMovement.findMany({
       include: {
         product: true,
@@ -116,7 +118,7 @@ export const getRecentMovements = async (req: Request, res: Response, next: Next
         targetSite: true,
       },
       orderBy: { createdAt: 'desc' },
-      take: 10,
+      take: 30,
     });
 
     res.json({ success: true, data: movements });
