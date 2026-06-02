@@ -387,10 +387,30 @@ model Order {
   items             OrderItem[]
   comments          OrderComment[]
   attachments       OrderAttachment[]
+  auditLog          OrderAuditLog[]
 
   @@index([status])
   @@index([orderDate])
   @@map("orders")
+}
+
+model OrderAuditLog {
+  id            String   @id @default(uuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Type of change: 'created' | 'field' | 'status' | 'item_received' | 'item_anomaly' |
+  /// 'attachment_added' | 'attachment_removed'
+  action        String
+  /// Field name for 'field' actions, item label or attachment filename otherwise.
+  field         String?
+  oldValue      String?
+  newValue      String?
+  changedAt     DateTime @default(now())
+  changedById   String?
+  changedByName String?
+
+  @@index([orderId, changedAt])
+  @@map("order_audit_log")
 }
 
 model OrderAttachment {

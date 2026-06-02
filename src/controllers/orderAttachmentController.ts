@@ -5,6 +5,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
+import { recordAttachmentAdded, recordAttachmentRemoved } from '../services/orderAudit';
 
 // Attachments live under /uploads/order-attachments. Same disk volume as
 // product images so Coolify already mounts it as persistent storage.
@@ -65,6 +66,10 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         uploadedByName: authUser?.fullName || authUser?.username || null,
       },
     });
+    await recordAttachmentAdded(prisma, orderId, attachment.filename, {
+      id: authUser?.id ?? null,
+      name: authUser?.fullName || authUser?.username || null,
+    });
     res.status(201).json({ success: true, data: attachment });
   } catch (error) {
     next(error);
@@ -90,6 +95,11 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
       // ignore — orphan files on disk are tolerable; we don't want to block the DELETE
     }
     await prisma.orderAttachment.delete({ where: { id: attachmentId } });
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+    await recordAttachmentRemoved(prisma, orderId, attachment.filename, {
+      id: authUser?.id ?? null,
+      name: authUser?.fullName || authUser?.username || null,
+    });
     res.json({ success: true });
   } catch (error) {
     next(error);

@@ -3,6 +3,14 @@ import prisma from '../config/database';
 import { OrderQueryInput, ReceiveItemInput, ReceiveAllInput } from '../schemas/order';
 import { AppError } from '../middleware/errorHandler';
 import { publishCrudEvent } from '../services/rabbitmq';
+import {
+  diffOrderScalars,
+  recordCreated,
+  recordFieldChanges,
+  recordStatusChange,
+  recordItemReceived,
+  recordAnomaly,
+} from '../services/orderAudit';
 
 const orderInclude = {
   supplier: true,
@@ -87,7 +95,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { items, createdBy: _ignored, ...headerData } = req.body;
-    const authUser = (req as any).user as { fullName?: string; username?: string } | undefined;
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
     const createdBy = authUser?.fullName || authUser?.username || null;
 
     const order = await prisma.$transaction(async (tx) => {
@@ -112,7 +120,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
       const orderNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
 
-      return tx.order.create({
+      const created = await tx.order.create({
         data: {
           ...headerData,
           orderNumber,
@@ -127,6 +135,15 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         },
         include: orderInclude,
       });
+
+      // Audit: single 'created' entry — we don't list every field-level value
+      // because the user just typed them and the diff vs nothing isn't useful.
+      await recordCreated(tx, created.id, {
+        id: authUser?.id ?? null,
+        name: createdBy,
+      });
+
+      return created;
     });
 
     publishCrudEvent('orders', 'inserted', order as any, (req as any).user);
@@ -140,11 +157,34 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 export const update = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
+    const authUser = (req as any).user as { id?: string; fullName?: string; username?: string } | undefined;
+    const who = {
+      id: authUser?.id ?? null,
+      name: authUser?.fullName || authUser?.username || null,
+    };
 
-    const order = await prisma.order.update({
-      where: { id },
-      data: req.body,
-      include: orderInclude,
+    // Snapshot the order before the update so we can diff and emit audit rows.
+    const previous = await prisma.order.findUnique({ where: { id } });
+    if (!previous) throw new AppError('Commande non trouvée', 404);
+
+    const order = await prisma.$transaction(async (tx) => {
+      const updated = await tx.order.update({
+        where: { id },
+        data: req.body,
+        include: orderInclude,
+      });
+
+      // Diff: tracked scalar fields
+      const diffs = diffOrderScalars(previous as any, req.body);
+      await recordFieldChanges(tx, id, diffs, who);
+
+      // Status transitions get their own dedicated audit row so the timeline
+      // can highlight them with a distinct icon/color.
+      if (req.body.status && req.body.status !== previous.status) {
+        await recordStatusChange(tx, id, previous.status, req.body.status, who);
+      }
+
+      return updated;
     });
 
     publishCrudEvent('orders', 'updated', order as any, (req as any).user);
@@ -320,16 +360,41 @@ export const receiveItem = async (req: Request, res: Response, next: NextFunctio
         (i) => i.receivedQty !== null && (i.receivedQty || 0) > 0,
       );
 
+      // Audit: item received + per-anomaly entries
+      const productLabel =
+        (item as any).product?.description || (item as any).product?.reference || item.productId;
+      const productInfo = await tx.product.findUnique({
+        where: { id: item.productId },
+        select: { reference: true, description: true },
+      });
+      const label =
+        productInfo?.description || productInfo?.reference || productLabel;
+      const who = {
+        id: authUser?.id ?? null,
+        name: authUser?.fullName || authUser?.username || null,
+      };
+      await recordItemReceived(tx, orderId, label, receivedQty, who);
+      for (const a of anomalies || []) {
+        await recordAnomaly(tx, orderId, label, a, who);
+      }
+
+      let statusTransition: { from: string; to: string } | null = null;
       if (allReceived) {
         await tx.order.update({
           where: { id: orderId },
           data: { status: 'COMPLETED', receivedDate: new Date(receivedDate) },
         });
-      } else if (anyReceived) {
+        if (order.status !== 'COMPLETED')
+          statusTransition = { from: order.status, to: 'COMPLETED' };
+      } else if (anyReceived && order.status !== 'PARTIAL') {
         await tx.order.update({
           where: { id: orderId },
           data: { status: 'PARTIAL' },
         });
+        statusTransition = { from: order.status, to: 'PARTIAL' };
+      }
+      if (statusTransition) {
+        await recordStatusChange(tx, orderId, statusTransition.from, statusTransition.to, who);
       }
 
       return tx.order.findUnique({
@@ -430,6 +495,22 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
           });
         }
 
+        // Audit: this item received + per-anomaly
+        const productInfo = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { reference: true, description: true },
+        });
+        const itemLabel =
+          productInfo?.description || productInfo?.reference || item.productId;
+        const itemWho = {
+          id: authUser?.id ?? null,
+          name: operator,
+        };
+        await recordItemReceived(tx, orderId, itemLabel, ri.receivedQty, itemWho);
+        for (const a of ri.anomalies || []) {
+          await recordAnomaly(tx, orderId, itemLabel, a, itemWho);
+        }
+
         if (ri.receivedQty > 0 && targetSiteId) {
           // Créer le mouvement d'entrée
           await tx.stockMovement.create({
@@ -511,6 +592,7 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
         (i) => i.receivedQty !== null && (i.receivedQty || 0) > 0,
       );
 
+      const allWho = { id: authUser?.id ?? null, name: operator };
       if (allReceived) {
         await tx.order.update({
           where: { id: orderId },
@@ -519,11 +601,15 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
             receivedDate: dateObj,
           },
         });
-      } else if (anyReceived) {
+        if (order.status !== 'COMPLETED') {
+          await recordStatusChange(tx, orderId, order.status, 'COMPLETED', allWho);
+        }
+      } else if (anyReceived && order.status !== 'PARTIAL') {
         await tx.order.update({
           where: { id: orderId },
           data: { status: 'PARTIAL' },
         });
+        await recordStatusChange(tx, orderId, order.status, 'PARTIAL', allWho);
       }
 
       return tx.order.findUnique({
@@ -535,6 +621,21 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
     publishCrudEvent('orders', 'updated', result as any, (req as any).user);
 
     res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAuditLog = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const order = await prisma.order.findUnique({ where: { id }, select: { id: true } });
+    if (!order) throw new AppError('Commande non trouvée', 404);
+    const entries = await prisma.orderAuditLog.findMany({
+      where: { orderId: id },
+      orderBy: { changedAt: 'desc' },
+    });
+    res.json({ success: true, data: entries });
   } catch (error) {
     next(error);
   }

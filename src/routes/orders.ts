@@ -16,6 +16,9 @@ router.post('/:id/items/:itemId/receive', validateBody(receiveItemSchema), order
 router.post('/:id/receive-all', validateBody(receiveAllSchema), orderController.receiveAll);
 router.delete('/:id', orderController.remove);
 
+// Audit log (modifications timeline)
+router.get('/:id/audit-log', orderController.getAuditLog);
+
 // Order attachments
 router.get('/:id/attachments', orderAttachmentController.list);
 router.post('/:id/attachments', orderAttachmentController.upload.single('file'), orderAttachmentController.create);
