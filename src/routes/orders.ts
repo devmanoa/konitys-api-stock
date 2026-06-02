@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as orderController from '../controllers/orderController';
 import * as orderCommentController from '../controllers/orderCommentController';
+import * as orderAttachmentController from '../controllers/orderAttachmentController';
 import { validateBody, validateQuery } from '../middleware/validation';
 import { createOrderSchema, updateOrderSchema, receiveItemSchema, receiveAllSchema, orderQuerySchema } from '../schemas/order';
 import { createProductCommentSchema, updateProductCommentSchema, productCommentQuerySchema } from '../schemas/productComment';
@@ -14,6 +15,11 @@ router.put('/:id', validateBody(updateOrderSchema), orderController.update);
 router.post('/:id/items/:itemId/receive', validateBody(receiveItemSchema), orderController.receiveItem);
 router.post('/:id/receive-all', validateBody(receiveAllSchema), orderController.receiveAll);
 router.delete('/:id', orderController.remove);
+
+// Order attachments
+router.get('/:id/attachments', orderAttachmentController.list);
+router.post('/:id/attachments', orderAttachmentController.upload.single('file'), orderAttachmentController.create);
+router.delete('/:id/attachments/:attachmentId', orderAttachmentController.remove);
 
 // Order comments
 router.get('/:id/comments', validateQuery(productCommentQuerySchema), orderCommentController.getAll as any);

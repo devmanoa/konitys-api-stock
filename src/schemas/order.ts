@@ -15,6 +15,7 @@ export const createOrderSchema = z.object({
   responsible: z.string().max(50).optional(),
   supplierRef: z.string().max(100).optional(),
   comment: z.string().optional(),
+  shippingCost: z.number().min(0, 'Les frais doivent être positifs').optional().nullable(),
   createdBy: z.string().max(100).optional(),
   items: z.array(orderItemSchema).min(1, 'Au moins un produit est requis'),
 });
@@ -27,6 +28,7 @@ export const updateOrderSchema = z.object({
   responsible: z.string().max(50).optional().nullable(),
   supplierRef: z.string().max(100).optional().nullable(),
   comment: z.string().optional().nullable(),
+  shippingCost: z.number().min(0).optional().nullable(),
   status: z.enum(['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED']).optional(),
 });
 

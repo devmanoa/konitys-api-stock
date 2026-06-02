@@ -13,6 +13,7 @@ const orderInclude = {
       anomalies: { orderBy: { reportedAt: 'desc' as const } },
     },
   },
+  attachments: { orderBy: { uploadedAt: 'desc' as const } },
 };
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {

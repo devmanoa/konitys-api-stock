@@ -353,15 +353,37 @@ model Order {
   responsible       String?
   supplierRef       String?
   comment           String?
+  shippingCost      Decimal?    @db.Decimal(10, 2)
   createdBy         String?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   items             OrderItem[]
   comments          OrderComment[]
+  attachments       OrderAttachment[]
 
   @@index([status])
   @@index([orderDate])
   @@map("orders")
+}
+
+model OrderAttachment {
+  id            String   @id @default(uuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Original file name as uploaded by the user (for display).
+  filename      String
+  /// Path on disk under /uploads (served as a static asset).
+  url           String
+  /// Detected MIME type (kept for icon / preview decisions).
+  mimeType      String?
+  /// File size in bytes.
+  size          Int?
+  uploadedAt    DateTime @default(now())
+  uploadedById  String?
+  uploadedByName String?
+
+  @@index([orderId, uploadedAt])
+  @@map("order_attachments")
 }
 
 model OrderComment {
