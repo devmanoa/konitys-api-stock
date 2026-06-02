@@ -313,6 +313,7 @@ export const getTopProductsByStock = async (req: Request, res: Response, next: N
         id: product.id,
         reference: product.reference,
         description: product.description,
+        imageUrl: product.imageUrl,
         assembly: product.assembly?.name || 'Sans type',
         totalNew: product.stocks.reduce((sum: number, s: any) => sum + s.quantityNew, 0),
         totalUsed: product.stocks.reduce((sum: number, s: any) => sum + s.quantityUsed, 0),
