@@ -8,6 +8,7 @@ import { createProductCommentSchema, updateProductCommentSchema, productCommentQ
 
 const router = Router();
 
+router.get('/stats', orderController.getStats);
 router.get('/', validateQuery(orderQuerySchema), orderController.getAll);
 router.get('/:id', orderController.getById);
 router.post('/', validateBody(createOrderSchema), orderController.create);

@@ -626,6 +626,50 @@ export const receiveAll = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+/**
+ * GET /orders/stats
+ * Global counters for the Orders KPIs: count by status + total pending quantity.
+ * Intentionally ignores all list-page filters (search/supplier/date range) so the
+ * KPIs always reflect the overall state, not the active tab.
+ */
+export const getStats = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [byStatus, pendingItems] = await Promise.all([
+      prisma.order.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      prisma.orderItem.findMany({
+        where: { order: { status: { in: ['PENDING', 'PARTIAL'] } } },
+        select: { quantity: true, receivedQty: true },
+      }),
+    ]);
+    const counts: Record<string, number> = {
+      PENDING: 0,
+      PARTIAL: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+    };
+    for (const row of byStatus) counts[row.status] = row._count._all;
+    // "Qté attente" = sum of (quantity - receivedQty) on items belonging to
+    // orders that are still pending or partially received.
+    const pendingQty = pendingItems.reduce(
+      (sum, i) => sum + Math.max(0, i.quantity - (i.receivedQty || 0)),
+      0,
+    );
+    res.json({
+      success: true,
+      data: {
+        counts,
+        pendingQty,
+        total: Object.values(counts).reduce((a, b) => a + b, 0),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getAuditLog = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
