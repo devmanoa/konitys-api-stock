@@ -10,6 +10,7 @@ const router = Router();
 // Supplier routes
 router.get('/', validateQuery(supplierQuerySchema), supplierController.getAll);
 router.get('/:id', supplierController.getById);
+router.get('/:id/reception-anomalies', supplierController.getReceptionAnomalies);
 router.post('/', validateBody(createSupplierSchema), supplierController.create);
 router.put('/:id', validateBody(updateSupplierSchema), supplierController.update);
 router.delete('/:id', supplierController.remove);

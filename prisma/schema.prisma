@@ -34,6 +34,7 @@ enum SerialStatus {
 
 enum OrderStatus {
   PENDING
+  PARTIAL
   COMPLETED
   CANCELLED
 }
@@ -237,6 +238,10 @@ model ProductSerialItem {
   exitedAt      DateTime?
   borneNumber   String?
   comment       String?
+  /// Set when this unit came in as part of an accepted reception anomaly. The
+  /// item is in stock (condition stays NEW) but is flagged as a known issue.
+  hasAnomaly      Boolean        @default(false)
+  anomalyComment  String?
   createdAt     DateTime         @default(now())
   createdById   String?
   createdByName String?
@@ -376,18 +381,42 @@ model OrderComment {
 }
 
 model OrderItem {
-  id           String    @id @default(uuid())
+  id           String                    @id @default(uuid())
   orderId      String
-  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order        Order                     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId    String
-  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product      Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity     Int
-  unitPrice    Decimal?  @db.Decimal(10, 2)
+  unitPrice    Decimal?                  @db.Decimal(10, 2)
   receivedQty  Int?
   receivedDate DateTime?
   condition    String?
+  anomalies    OrderItemAnomaly[]
 
   @@map("order_items")
+}
+
+enum AnomalyDecision {
+  ACCEPTED
+  REFUSED
+}
+
+model OrderItemAnomaly {
+  id            String          @id @default(uuid())
+  orderItemId   String
+  orderItem     OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  /// Number of units affected by the anomaly (subset of receivedQty + refused).
+  quantity      Int
+  decision      AnomalyDecision
+  comment       String
+  /// Optional photo URLs uploaded by the receiver.
+  photoUrls     String[]        @default([])
+  reportedAt    DateTime        @default(now())
+  reportedById  String?
+  reportedByName String?
+
+  @@index([orderItemId])
+  @@map("order_item_anomalies")
 }
 
 model Pack {

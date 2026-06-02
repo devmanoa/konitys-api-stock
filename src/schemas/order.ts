@@ -27,21 +27,30 @@ export const updateOrderSchema = z.object({
   responsible: z.string().max(50).optional().nullable(),
   supplierRef: z.string().max(100).optional().nullable(),
   comment: z.string().optional().nullable(),
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELLED']).optional(),
+  status: z.enum(['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED']).optional(),
+});
+
+const anomalyInputSchema = z.object({
+  quantity: z.number().int().positive("La quantité d'anomalie doit être positive"),
+  decision: z.enum(['ACCEPTED', 'REFUSED']),
+  comment: z.string().min(1, 'Un commentaire est obligatoire pour signaler une anomalie'),
+  photoUrls: z.array(z.string()).optional(),
 });
 
 export const receiveItemSchema = z.object({
   receivedDate: z.coerce.date(),
-  receivedQty: z.number().int().positive('La quantité reçue doit être positive'),
+  receivedQty: z.number().int().min(0, 'La quantité reçue ne peut pas être négative'),
   condition: z.enum(['NEW', 'USED']).default('NEW'),
   siteId: z.string().uuid().optional(),
   comment: z.string().optional(),
+  anomalies: z.array(anomalyInputSchema).optional(),
 });
 
 const receiveAllItemSchema = z.object({
   itemId: z.string().uuid(),
-  receivedQty: z.number().int().positive('La quantité reçue doit être positive'),
+  receivedQty: z.number().int().min(0, 'La quantité reçue ne peut pas être négative'),
   condition: z.enum(['NEW', 'USED']).default('NEW'),
+  anomalies: z.array(anomalyInputSchema).optional(),
 });
 
 export const receiveAllSchema = z.object({
@@ -56,7 +65,7 @@ export type ReceiveAllInput = z.infer<typeof receiveAllSchema>;
 export const orderQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELLED']).optional(),
+  status: z.enum(['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED']).optional(),
   supplierId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
   startDate: z.coerce.date().optional(),

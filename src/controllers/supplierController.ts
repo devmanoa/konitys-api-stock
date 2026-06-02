@@ -80,7 +80,10 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
         orders: {
           include: {
             items: {
-              include: { product: true },
+              include: {
+                product: true,
+                anomalies: { orderBy: { reportedAt: 'desc' } },
+              },
             },
             destinationSite: true,
           },
@@ -97,6 +100,32 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
     }
 
     res.json({ success: true, data: supplier });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /suppliers/:id/reception-anomalies
+ * Flat list of every anomaly reported across all of this supplier's orders.
+ * Used by the supplier detail page to surface the supplier's reliability.
+ */
+export const getReceptionAnomalies = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const anomalies = await prisma.orderItemAnomaly.findMany({
+      where: { orderItem: { order: { supplierId: id } } },
+      orderBy: { reportedAt: 'desc' },
+      include: {
+        orderItem: {
+          include: {
+            order: { select: { id: true, orderNumber: true, orderDate: true } },
+            product: { select: { id: true, reference: true, description: true, imageUrl: true } },
+          },
+        },
+      },
+    });
+    res.json({ success: true, data: anomalies });
   } catch (error) {
     next(error);
   }
