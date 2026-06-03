@@ -583,3 +583,22 @@ model ProductPartCategory {
   @@map("product_part_categories")
 }
 
+// Local cache of platform users. Upserted at every login (see /users/sync)
+// so we can render avatars, full name and profile picture for any operator
+// that has ever connected, without round-tripping the gateway each time.
+model User {
+  id         String   @id @default(uuid())
+  keycloakId String   @unique
+  email      String?
+  firstName  String?
+  lastName   String?
+  fullName   String?
+  photoNom   String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([fullName])
+  @@map("users")
+}
+
