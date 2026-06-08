@@ -13,6 +13,7 @@ productScopedRouter.get('/', validateQuery(listSerialItemsQuerySchema) as any, c
 productScopedRouter.post('/', validateBody(createSerialItemSchema), controller.create);
 
 const flatRouter = Router();
+flatRouter.get('/:id', controller.getById);
 flatRouter.put('/:id', validateBody(updateSerialItemSchema), controller.update);
 flatRouter.delete('/:id', controller.remove);
 

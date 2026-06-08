@@ -8,6 +8,20 @@ const serialInclude = {
   product: { select: { id: true, reference: true, description: true } },
 } as const;
 
+export const getById = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const item = await prisma.productSerialItem.findUnique({
+      where: { id },
+      include: serialInclude,
+    });
+    if (!item) throw new AppError('Numéro de série introuvable', 404);
+    res.json({ success: true, data: item });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const listForProduct = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const productId = req.params.id as string;
