@@ -201,6 +201,39 @@ export const deleteEntry = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+// GET /inventories/:id/unknowns?locationId=...
+export const listUnknowns = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const locationId = (req.query.locationId as string) || undefined;
+    const unknowns = await prisma.inventoryUnknownEntry.findMany({
+      where: {
+        inventoryId: id,
+        ...(locationId ? { locationId } : {}),
+      },
+      include: {
+        location: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    res.json({ success: true, data: unknowns });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /inventories/:id/unknowns/:unknownId
+export const deleteUnknown = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const unknownId = String(req.params.unknownId);
+    await prisma.inventoryUnknownEntry.delete({ where: { id: unknownId } });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // POST /inventories/:id/unknowns
 // Body: { description, category?, quantity?, comment?, photoUrl?, locationId? }
 export const createUnknown = async (
