@@ -19,6 +19,8 @@
  * still fill the fields manually).
  */
 
+import { getNafLabel } from './nafLabels';
+
 const INSEE_BASE = 'https://api.insee.fr/api-sirene/3.11';
 const FALLBACK_BASE = 'https://recherche-entreprises.api.gouv.fr';
 
@@ -98,6 +100,9 @@ function mapInseeEtablissement(et: InseeEtablissement): CompanyInfo {
   const currentPeriode = et.periodesEtablissement?.find((p) => !p.dateFin)
     ?? et.periodesEtablissement?.[0];
   const yearMatch = (ul?.dateCreationUniteLegale || et.dateCreationEtablissement || '').match(/^(\d{4})/);
+  const naf = currentPeriode?.activitePrincipaleEtablissement
+    || ul?.activitePrincipaleUniteLegale
+    || null;
   return {
     siret: et.siret || null,
     siren: et.siren || (et.siret ? et.siret.slice(0, 9) : null),
@@ -105,10 +110,8 @@ function mapInseeEtablissement(et: InseeEtablissement): CompanyInfo {
     legalStatus: currentPeriode?.etatAdministratifEtablissement
       || ul?.etatAdministratifUniteLegale
       || null,
-    naf: currentPeriode?.activitePrincipaleEtablissement
-      || ul?.activitePrincipaleUniteLegale
-      || null,
-    nafLabel: null, // INSEE returns codes only, no label.
+    naf,
+    nafLabel: getNafLabel(naf),
     creationYear: yearMatch ? Number(yearMatch[1]) : null,
     address: buildInseeAddress(et.adresseEtablissement),
     postalCode: et.adresseEtablissement?.codePostalEtablissement || null,
@@ -183,7 +186,7 @@ function mapHit(hit: RawCompanyHit): CompanyInfo {
     legalName: hit.nom_complet || hit.nom_raison_sociale || null,
     legalStatus: hit.siege?.etat_administratif || hit.etat_administratif || null,
     naf: hit.activite_principale || null,
-    nafLabel: hit.libelle_activite_principale || null,
+    nafLabel: hit.libelle_activite_principale || getNafLabel(hit.activite_principale),
     creationYear: yearMatch ? Number(yearMatch[1]) : null,
     address: hit.siege?.adresse || hit.matching_etablissements?.[0]?.adresse || null,
     postalCode: hit.siege?.code_postal || hit.matching_etablissements?.[0]?.code_postal || null,

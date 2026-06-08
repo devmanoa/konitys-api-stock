@@ -22,6 +22,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@socialgouv/codes-naf": "^1.1.1",
     "amqplib": "^0.10.9",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
