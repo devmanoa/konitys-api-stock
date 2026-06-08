@@ -10,6 +10,7 @@ import {
 const router = Router();
 
 router.get('/', validateQuery(locationQuerySchema), locationController.getAll);
+router.get('/:id', locationController.getById);
 router.post('/', validateBody(createLocationSchema), locationController.create);
 router.put('/:id', validateBody(updateLocationSchema), locationController.update);
 router.delete('/:id', locationController.remove);

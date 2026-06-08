@@ -25,6 +25,20 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
+export const getById = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const location = await prisma.location.findUnique({
+      where: { id },
+      include,
+    });
+    if (!location) throw new AppError('Emplacement introuvable', 404);
+    res.json({ success: true, data: location });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { siteId, parentId, name, position } = req.body;
