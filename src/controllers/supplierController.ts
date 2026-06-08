@@ -223,6 +223,9 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
       lookupBySiret(newSiret)
         .then(async (info) => {
           if (!info) return;
+          // Re-read the supplier in case the user kept editing while we were
+          // waiting on the external API — don't clobber their typed address.
+          const current = await prisma.supplier.findUnique({ where: { id } });
           await prisma.supplier.update({
             where: { id },
             data: {
@@ -233,6 +236,10 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
               naf: info.naf ?? null,
               nafLabel: info.nafLabel ?? null,
               creationYear: info.creationYear ?? null,
+              // Fill the postal address only if the user hasn't entered one.
+              address: current?.address || info.address || null,
+              postalCode: current?.postalCode || info.postalCode || null,
+              city: current?.city || info.city || null,
               companyInfoUpdatedAt: new Date(),
             },
           });
