@@ -16,6 +16,7 @@ import orderTemplateRoutes from './orderTemplates';
 import partCategoryRoutes from './partCategories';
 import locationRoutes from './locations';
 import userRoutes from './users';
+import inventoryRoutes from './inventories';
 import { serialItemsForProductRouter, serialItemsRouter } from './serialItems';
 import { authenticate } from '../middleware/auth';
 
@@ -48,5 +49,6 @@ router.use('/upload', uploadRoutes);
 router.use('/packs', packRoutes);
 router.use('/order-templates', orderTemplateRoutes);
 router.use('/users', userRoutes);
+router.use('/inventories', inventoryRoutes);
 
 export default router;

@@ -44,6 +44,20 @@ enum SiteType {
   EXIT
 }
 
+enum InventoryItemState {
+  OK
+  TO_CHECK
+  DAMAGED
+  OUT_OF_SERVICE
+}
+
+enum InventoryEntrySource {
+  SCAN
+  SEARCH
+  CATEGORY
+  UNKNOWN
+}
+
 model AssemblyType {
   id             String                 @id @default(uuid())
   name           String                 @unique
@@ -175,6 +189,7 @@ model Site {
   orderTemplates  OrderTemplate[]
   serialItems     ProductSerialItem[]
   locations       Location[]
+  inventories     Inventory[]
 
   @@map("sites")
 }
@@ -194,6 +209,8 @@ model Location {
   position  Int        @default(0)
   createdAt DateTime   @default(now())
   products  Product[]
+  inventoryEntries InventoryEntry[]
+  inventoryUnknownEntries InventoryUnknownEntry[]
 
   // A given name is unique within its (site, parent) scope. Postgres allows
   // multiple NULL parentIds without violating the unique index — so two level-1
@@ -233,6 +250,7 @@ model Product {
   hasSerialNumber  Boolean              @default(false)
   serialItems      ProductSerialItem[]
   auditLog         ProductAuditLog[]
+  inventoryEntries InventoryEntry[]
 
   @@map("products")
 }
@@ -600,5 +618,77 @@ model User {
 
   @@index([fullName])
   @@map("users")
+}
+
+// ===== Inventory (V1) =====
+// Goal: let an operator record what they physically see in a zone, WITHOUT
+// being told what's theoretically supposed to be there. Comparison with
+// theoretical stock happens later, in a separate screen or pipeline.
+model Inventory {
+  id          String   @id @default(uuid())
+  name        String
+  siteId      String?
+  site        Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  startedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  entries     InventoryEntry[]
+  unknowns    InventoryUnknownEntry[]
+
+  @@map("inventories")
+}
+
+// One entry per counted product (or per counted unit, for serial-tracked).
+// We never compare with the theoretical stock at write time; this is raw
+// truth as seen by the operator.
+model InventoryEntry {
+  id          String              @id @default(uuid())
+  inventoryId String
+  inventory   Inventory           @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  locationId  String?
+  location    Location?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  productId   String
+  product     Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  // For quantitative items: the counted quantity. For serialised items
+  // we still set it to 1 to keep aggregate counts simple.
+  quantity    Int                 @default(1)
+  // For serial-tracked products. Free text so we can also record an "unknown
+  // serial" line (then we expect comment to explain).
+  serialNumber String?
+  state       InventoryItemState  @default(OK)
+  comment     String?
+  photoUrl    String?
+  source      InventoryEntrySource @default(SEARCH)
+  // Who recorded the entry (Keycloak sub).
+  operatorId   String?
+  operatorName String?
+  createdAt   DateTime            @default(now())
+
+  @@index([inventoryId, locationId])
+  @@index([inventoryId, productId])
+  @@index([inventoryId, serialNumber])
+  @@map("inventory_entries")
+}
+
+// "Produit non trouvé" — recorded when the operator sees something in the
+// zone that they can't match to a known product. We capture description,
+// rough category and quantity so an admin can reconcile them later.
+model InventoryUnknownEntry {
+  id           String   @id @default(uuid())
+  inventoryId  String
+  inventory    Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  locationId   String?
+  location     Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  description  String
+  category     String?   // Free text: "Câble", "Accessoire", "Consommable", "Matériel", "Autre"
+  quantity     Int       @default(1)
+  comment      String?
+  photoUrl     String?
+  operatorId   String?
+  operatorName String?
+  createdAt    DateTime  @default(now())
+
+  @@index([inventoryId, locationId])
+  @@map("inventory_unknown_entries")
 }
 
