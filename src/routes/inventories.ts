@@ -15,5 +15,9 @@ router.post('/:id/unknowns', inventoryController.createUnknown as any);
 router.delete('/:id/unknowns/:unknownId', inventoryController.deleteUnknown);
 router.get('/:id/zone-summary', inventoryController.zoneSummary);
 router.get('/:id/check-serial', inventoryController.checkSerial);
+router.get('/:id/compare', inventoryController.compare);
+router.post('/:id/close', inventoryController.close as any);
+router.post('/:id/reopen', inventoryController.reopen);
+router.post('/:id/apply-corrections', inventoryController.applyCorrections as any);
 
 export default router;

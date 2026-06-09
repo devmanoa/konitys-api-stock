@@ -51,6 +51,11 @@ enum InventoryItemState {
   OUT_OF_SERVICE
 }
 
+enum InventoryStatus {
+  DRAFT
+  CLOSED
+}
+
 enum InventoryEntrySource {
   SCAN
   SEARCH
@@ -625,15 +630,21 @@ model User {
 // being told what's theoretically supposed to be there. Comparison with
 // theoretical stock happens later, in a separate screen or pipeline.
 model Inventory {
-  id          String   @id @default(uuid())
-  name        String
-  siteId      String?
-  site        Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  startedAt   DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  entries     InventoryEntry[]
-  unknowns    InventoryUnknownEntry[]
+  id              String           @id @default(uuid())
+  name            String
+  siteId          String?
+  site            Site?            @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  status          InventoryStatus  @default(DRAFT)
+  startedAt       DateTime         @default(now())
+  closedAt        DateTime?
+  closedByName    String?
+  /// True once apply-corrections has run, so we don't double-apply.
+  correctionsApplied Boolean       @default(false)
+  correctionsAppliedAt DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  entries         InventoryEntry[]
+  unknowns        InventoryUnknownEntry[]
 
   @@map("inventories")
 }
