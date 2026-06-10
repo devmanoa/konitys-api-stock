@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database';
+import { AppError } from '../middleware/errorHandler';
 import { AuthenticatedRequest } from '../types/auth';
+
+// photoNom is concatenated directly into a URL by the client:
+//   `${gateway}/uploads/contacts/${photoNom}`
+// So we MUST refuse any traversal (`../`), any slash, or any control char.
+// Real photoNom values are gateway-generated filenames (UUID-ish).
+const PHOTO_NOM_RE = /^[\w.-]{1,128}$/;
 
 /**
  * POST /api/users/sync
@@ -21,13 +28,22 @@ export const syncCurrentUser = async (
     const { photoNom } = (req.body || {}) as { photoNom?: string | null };
     const keycloakId = req.user.id;
 
+    // Validate user-supplied photoNom: refuse traversal / impersonation.
+    let safePhotoNom: string | null = null;
+    if (photoNom != null && photoNom !== '') {
+      if (typeof photoNom !== 'string' || !PHOTO_NOM_RE.test(photoNom)) {
+        throw new AppError('photoNom invalide', 400);
+      }
+      safePhotoNom = photoNom;
+    }
+
     const data = {
       keycloakId,
       email: req.user.email || null,
       firstName: req.user.firstName || null,
       lastName: req.user.lastName || null,
       fullName: req.user.fullName || req.user.username || null,
-      photoNom: photoNom ?? null,
+      photoNom: safePhotoNom,
       lastSeenAt: new Date(),
     };
 
@@ -58,11 +74,13 @@ export const listUsers = async (
   next: NextFunction,
 ) => {
   try {
+    // Public-ish list used by OperatorAvatar to look up profile pictures.
+    // Email is intentionally omitted so authenticated callers can't enumerate
+    // the company directory for phishing.
     const users = await prisma.user.findMany({
       select: {
         id: true,
         keycloakId: true,
-        email: true,
         firstName: true,
         lastName: true,
         fullName: true,

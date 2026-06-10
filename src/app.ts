@@ -22,14 +22,27 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files with CORS headers
+// Serve uploaded files with CORS + security headers.
+//   - Images under /uploads/products/* may be inlined (used by <img>).
+//   - Any other folder (notably /uploads/files/*) is forced to download
+//     via Content-Disposition: attachment, so a malicious HTML/SVG/PDF/etc.
+//     cannot run JavaScript in the app's origin.
 const uploadsPath = path.join(process.cwd(), 'uploads');
-console.log('Serving uploads from:', uploadsPath);
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  // Defense in depth: tell sniffing browsers to trust the declared Content-Type.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Anything outside /uploads/products is forced to download.
+  if (!req.path.startsWith('/products/')) {
+    res.setHeader('Content-Disposition', 'attachment');
+  }
   next();
-}, express.static(uploadsPath));
+}, express.static(uploadsPath, {
+  // UUID filenames are immutable: cache aggressively.
+  maxAge: '30d',
+  immutable: true,
+}));
 
 // Simple ping endpoint (no DB required)
 app.get('/', (req, res) => {

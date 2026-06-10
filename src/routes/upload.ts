@@ -6,80 +6,107 @@ import crypto from 'crypto';
 
 const router = Router();
 
-// Create uploads directories if they don't exist
 const uploadsDir = path.join(process.cwd(), 'uploads', 'products');
 const filesDir = path.join(process.cwd(), 'uploads', 'files');
-console.log('Upload directory:', uploadsDir);
-console.log('Files directory:', filesDir);
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-if (!fs.existsSync(filesDir)) {
-  fs.mkdirSync(filesDir, { recursive: true });
-}
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(filesDir)) fs.mkdirSync(filesDir, { recursive: true });
 
-// Configure multer for image upload
+// Allowlist mime->safe extension so we never propagate user-controlled
+// extensions to disk (defends against xss.html, .svg, .phtml, double-ext etc.).
+const IMAGE_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+
+const FILE_EXT: Record<string, string> = {
+  // PDFs
+  'application/pdf': '.pdf',
+  // Office (legacy + OOXML)
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.ms-powerpoint': '.ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  // OpenDocument
+  'application/vnd.oasis.opendocument.text': '.odt',
+  'application/vnd.oasis.opendocument.spreadsheet': '.ods',
+  'application/vnd.oasis.opendocument.presentation': '.odp',
+  // Archives
+  'application/zip': '.zip',
+  'application/x-zip-compressed': '.zip',
+  'application/x-rar-compressed': '.rar',
+  'application/vnd.rar': '.rar',
+  'application/x-7z-compressed': '.7z',
+  // Text
+  'text/plain': '.txt',
+  'text/csv': '.csv',
+};
+
 const imageStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadsDir);
-  },
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const filename = `${crypto.randomUUID()}${ext}`;
-    cb(null, filename);
+    const ext = IMAGE_EXT[file.mimetype];
+    if (!ext) return cb(new Error('Type d\'image non supporté'), '');
+    cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
 
 const upload = multer({
   storage: imageStorage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max
-  },
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Type de fichier non supporté. Utilisez JPEG, PNG, GIF ou WebP'));
-    }
+    if (IMAGE_EXT[file.mimetype]) cb(null, true);
+    else cb(new Error('Type non supporté. Utilisez JPEG, PNG, GIF ou WebP'));
   },
 });
 
-// Generic file upload (PDF, Office docs, archives, anything)
 const fileStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, filesDir);
-  },
+  destination: (_req, _file, cb) => cb(null, filesDir),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const filename = `${crypto.randomUUID()}${ext}`;
-    cb(null, filename);
+    const ext = FILE_EXT[file.mimetype];
+    if (!ext) return cb(new Error('Type de fichier non supporté'), '');
+    cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
 
 const uploadFile = multer({
   storage: fileStorage,
-  limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB max
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    // Block any executable / web mime that could be served as scripts.
+    if (FILE_EXT[file.mimetype]) cb(null, true);
+    else cb(new Error('Type de fichier non supporté'));
   },
 });
 
-// POST /api/upload/image - Upload a product image
+/**
+ * Resolve a filename against a base directory and refuse anything that
+ * escapes it (path traversal `../`, absolute paths, encoded `%2F`).
+ */
+function safeJoin(baseDir: string, filename: string): string | null {
+  const safe = path.basename(filename);
+  if (!safe || safe.includes('..') || safe.includes('\0')) return null;
+  const resolved = path.resolve(baseDir, safe);
+  if (!resolved.startsWith(path.resolve(baseDir) + path.sep)) return null;
+  return resolved;
+}
+
+// POST /api/upload/image
 router.post('/image', upload.single('image'), (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Aucun fichier uploadé' });
     }
-
-    const imageUrl = `/uploads/products/${req.file.filename}`;
-
     res.json({
       success: true,
       data: {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
-        imageUrl,
+        imageUrl: `/uploads/products/${req.file.filename}`,
       },
     });
   } catch (error) {
@@ -87,12 +114,11 @@ router.post('/image', upload.single('image'), (req: Request, res: Response, next
   }
 });
 
-// DELETE /api/upload/image/:filename - Delete an uploaded image
+// DELETE /api/upload/image/:filename
 router.delete('/image/:filename', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const filename = req.params.filename as string;
-    const filePath = path.join(uploadsDir, filename);
-
+    const filePath = safeJoin(uploadsDir, req.params.filename as string);
+    if (!filePath) return res.status(400).json({ success: false, error: 'Nom de fichier invalide' });
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       res.json({ success: true, message: 'Image supprimée' });
@@ -104,15 +130,12 @@ router.delete('/image/:filename', (req: Request, res: Response, next: NextFuncti
   }
 });
 
-// POST /api/upload/file - Upload a generic file (PDF, Office docs, archives, etc.)
+// POST /api/upload/file
 router.post('/file', uploadFile.single('file'), (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Aucun fichier uploadé' });
     }
-
-    const fileUrl = `/uploads/files/${req.file.filename}`;
-
     res.json({
       success: true,
       data: {
@@ -120,7 +143,7 @@ router.post('/file', uploadFile.single('file'), (req: Request, res: Response, ne
         originalName: req.file.originalname,
         size: req.file.size,
         mimeType: req.file.mimetype,
-        fileUrl,
+        fileUrl: `/uploads/files/${req.file.filename}`,
       },
     });
   } catch (error) {
@@ -128,12 +151,11 @@ router.post('/file', uploadFile.single('file'), (req: Request, res: Response, ne
   }
 });
 
-// DELETE /api/upload/file/:filename - Delete an uploaded file
+// DELETE /api/upload/file/:filename
 router.delete('/file/:filename', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const filename = req.params.filename as string;
-    const filePath = path.join(filesDir, filename);
-
+    const filePath = safeJoin(filesDir, req.params.filename as string);
+    if (!filePath) return res.status(400).json({ success: false, error: 'Nom de fichier invalide' });
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       res.json({ success: true, message: 'Fichier supprimé' });

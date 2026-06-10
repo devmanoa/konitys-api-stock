@@ -24,6 +24,21 @@ import { getNafLabel } from './nafLabels';
 const INSEE_BASE = 'https://api.insee.fr/api-sirene/3.11';
 const FALLBACK_BASE = 'https://recherche-entreprises.api.gouv.fr';
 
+// External APIs occasionally hang. Without a timeout, each lookup would
+// block a Node worker for tens of seconds — an easy DoS for any
+// authenticated user spamming /suppliers/lookup.
+const EXTERNAL_TIMEOUT_MS = 4000;
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), EXTERNAL_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export interface CompanyInfo {
   siret: string | null;
   siren: string | null;
@@ -132,7 +147,7 @@ async function lookupByInsee(value: string): Promise<CompanyInfo | null> {
     : `${INSEE_BASE}/siret?q=siren:${clean}%20AND%20etablissementSiege:true&nombre=1`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: {
         Accept: 'application/json',
         'X-INSEE-Api-Key-Integration': apiKey,
@@ -199,7 +214,7 @@ async function lookupByFallback(value: string): Promise<CompanyInfo | null> {
   if (clean.length !== 9 && clean.length !== 14) return null;
   const url = `${FALLBACK_BASE}/search?q=${encodeURIComponent(clean)}&page=1&per_page=1`;
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) return null;
     const json = (await res.json()) as { results?: RawCompanyHit[] };
     const hit = json.results?.[0];
@@ -235,7 +250,7 @@ export async function searchByText(
   if (trimmed.length < 2) return [];
   const url = `${FALLBACK_BASE}/search?q=${encodeURIComponent(trimmed)}&page=1&per_page=${limit}`;
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) return [];
     const json = (await res.json()) as { results?: RawCompanyHit[] };
     if (!Array.isArray(json.results)) return [];

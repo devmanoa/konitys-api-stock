@@ -213,8 +213,18 @@ export const updateEntry = async (req: Request, res: Response, next: NextFunctio
 // DELETE /inventories/:id/entries/:entryId
 export const deleteEntry = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await assertEditable(String(req.params.id));
-    await prisma.inventoryEntry.delete({ where: { id: String(req.params.entryId) } });
+    const id = String(req.params.id);
+    const entryId = String(req.params.entryId);
+    await assertEditable(id);
+    // Refuse cross-inventory IDOR: the entry must belong to the path id.
+    const entry = await prisma.inventoryEntry.findUnique({
+      where: { id: entryId },
+      select: { inventoryId: true },
+    });
+    if (!entry || entry.inventoryId !== id) {
+      throw new AppError('Saisie introuvable', 404);
+    }
+    await prisma.inventoryEntry.delete({ where: { id: entryId } });
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -246,8 +256,16 @@ export const listUnknowns = async (req: Request, res: Response, next: NextFuncti
 // DELETE /inventories/:id/unknowns/:unknownId
 export const deleteUnknown = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await assertEditable(String(req.params.id));
+    const id = String(req.params.id);
     const unknownId = String(req.params.unknownId);
+    await assertEditable(id);
+    const entry = await prisma.inventoryUnknownEntry.findUnique({
+      where: { id: unknownId },
+      select: { inventoryId: true },
+    });
+    if (!entry || entry.inventoryId !== id) {
+      throw new AppError('Saisie introuvable', 404);
+    }
     await prisma.inventoryUnknownEntry.delete({ where: { id: unknownId } });
     res.json({ success: true });
   } catch (error) {
@@ -336,6 +354,36 @@ export const checkSerial = async (req: Request, res: Response, next: NextFunctio
       select: { id: true, createdAt: true, operatorName: true },
     });
     res.json({ success: true, data: { duplicate: !!existing, existing } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /inventories/:id/find-quantitative?productId=...&locationId=...
+// Returns the existing quantitative entry (id + quantity) if the operator
+// already counted this product in this zone. Used by the client to offer
+// "Add" or "Replace" instead of silently creating a duplicate.
+//
+// Previously the client was fetching the last 200 entries and filtering
+// client-side, which broke once a zone had more than 200 saisies.
+export const findQuantitative = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const productId = req.query.productId as string;
+    const locationId = (req.query.locationId as string) || null;
+    if (!productId) {
+      return res.json({ success: true, data: null });
+    }
+    const existing = await prisma.inventoryEntry.findFirst({
+      where: {
+        inventoryId: id,
+        productId,
+        ...(locationId ? { locationId } : { locationId: null }),
+      },
+      select: { id: true, quantity: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, data: existing });
   } catch (error) {
     next(error);
   }
@@ -536,62 +584,94 @@ export const applyCorrections = async (
       );
     }
 
-    const productIds = new Set<string>([...countedMap.keys(), ...theoreticalMap.keys()]);
+    const productIds = Array.from(
+      new Set<string>([...countedMap.keys(), ...theoreticalMap.keys()]),
+    );
     const operator = req.user?.fullName || req.user?.username || 'Systeme';
     const now = new Date();
     const commentLabel = `Correction inventaire - ${inv.name}`;
 
-    let movementsCreated = 0;
+    // Pre-load all relevant Stock rows in ONE query instead of one findFirst
+    // per product (was N+1 inside the transaction).
+    const existingStocks = await prisma.stock.findMany({
+      where: { siteId: inv.siteId!, productId: { in: productIds } },
+    });
+    const stockMap = new Map<string, typeof existingStocks[number]>();
+    for (const s of existingStocks) stockMap.set(s.productId, s);
+
+    // Build the diff to apply, without writing yet.
+    type Diff = {
+      productId: string;
+      isInbound: boolean;
+      qty: number;
+      // How much to take from each pool when applying an OUT.
+      decFromUsed: number;
+      decFromNew: number;
+    };
+    const diffs: Diff[] = [];
+    for (const productId of productIds) {
+      const counted = countedMap.get(productId) ?? 0;
+      const theoretical = theoreticalMap.get(productId) ?? 0;
+      const gap = counted - theoretical;
+      if (gap === 0) continue;
+      const isInbound = gap > 0;
+      const qty = Math.abs(gap);
+      // For OUT, drain USED first (consistent with "matériel abîmé / perdu"
+      // pattern) then NEW. We never go below zero on either pool.
+      let decFromUsed = 0;
+      let decFromNew = 0;
+      if (!isInbound) {
+        const current = stockMap.get(productId);
+        const used = current?.quantityUsed ?? 0;
+        decFromUsed = Math.min(used, qty);
+        decFromNew = Math.min(current?.quantityNew ?? 0, qty - decFromUsed);
+      }
+      diffs.push({ productId, isInbound, qty, decFromUsed, decFromNew });
+    }
 
     await prisma.$transaction(async (tx) => {
-      for (const productId of productIds) {
-        const counted = countedMap.get(productId) ?? 0;
-        const theoretical = theoreticalMap.get(productId) ?? 0;
-        const gap = counted - theoretical;
-        if (gap === 0) continue;
-
-        const isInbound = gap > 0;
-        const qty = Math.abs(gap);
-
-        await tx.stockMovement.create({
-          data: {
-            productId,
-            type: isInbound ? 'IN' : 'OUT',
-            quantity: qty,
-            condition: 'NEW',
+      // Batch-create all movements in a single SQL.
+      if (diffs.length > 0) {
+        await tx.stockMovement.createMany({
+          data: diffs.map((d) => ({
+            productId: d.productId,
+            type: d.isInbound ? 'IN' : 'OUT' as const,
+            quantity: d.qty,
+            condition: 'NEW' as const,
             movementDate: now,
             operator,
             comment: commentLabel,
-            ...(isInbound
+            ...(d.isInbound
               ? { targetSiteId: inv.siteId! }
               : { sourceSiteId: inv.siteId! }),
-          },
+          })),
         });
+      }
 
-        const existingStock = await tx.stock.findFirst({
-          where: { productId, siteId: inv.siteId! },
-        });
-        if (existingStock) {
+      // Apply each diff to the Stock row.
+      for (const d of diffs) {
+        const existing = stockMap.get(d.productId);
+        if (existing) {
           await tx.stock.update({
-            where: { id: existingStock.id },
-            data: {
-              quantityNew: isInbound
-                ? { increment: qty }
-                : { decrement: Math.min(existingStock.quantityNew, qty) },
-            },
+            where: { id: existing.id },
+            data: d.isInbound
+              ? { quantityNew: { increment: d.qty } }
+              : {
+                  quantityNew: { decrement: d.decFromNew },
+                  quantityUsed: { decrement: d.decFromUsed },
+                },
           });
-        } else if (isInbound) {
+        } else if (d.isInbound) {
           await tx.stock.create({
             data: {
-              productId,
+              productId: d.productId,
               siteId: inv.siteId!,
-              quantityNew: qty,
+              quantityNew: d.qty,
               quantityUsed: 0,
             },
           });
         }
-
-        movementsCreated += 1;
+        // If !existing && !isInbound: nothing to do, theoretical was already 0.
       }
 
       await tx.inventory.update({
@@ -602,6 +682,8 @@ export const applyCorrections = async (
         },
       });
     });
+
+    const movementsCreated = diffs.length;
 
     res.json({ success: true, data: { movementsCreated } });
   } catch (error) {
