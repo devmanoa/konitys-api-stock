@@ -19,6 +19,7 @@ router.get('/:id/zone-summary', inventoryController.zoneSummary);
 router.get('/:id/check-serial', inventoryController.checkSerial);
 router.get('/:id/find-quantitative', inventoryController.findQuantitative);
 router.get('/:id/compare', inventoryController.compare);
+router.get('/:id/export', inventoryController.exportXlsx);
 
 // Routes sensibles: clôture, réouverture et — surtout — application des
 // corrections (qui crée des mouvements et modifie les stocks). Réservées

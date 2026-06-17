@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import * as XLSX from 'xlsx';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { AuthenticatedRequest } from '../types/auth';
@@ -686,6 +687,157 @@ export const applyCorrections = async (
     const movementsCreated = diffs.length;
 
     res.json({ success: true, data: { movementsCreated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /inventories/:id/export?tab=entries|unknowns|compare&filter=gap|surplus|missing|all
+//
+// Streams an .xlsx of the requested tab. The shape mirrors what the UI shows.
+// Compare uses the same aggregation as the compare endpoint; the filter param
+// matches the filter pills on the UI ("Avec écart" / "Surplus" / "Manquants" /
+// "Tout").
+export const exportXlsx = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const tabParam = String(req.query.tab || 'entries');
+    const filterParam = String(req.query.filter || 'gap');
+
+    const inv = await prisma.inventory.findUnique({
+      where: { id },
+      include: { site: true },
+    });
+    if (!inv) throw new AppError('Inventaire introuvable', 404);
+
+    const safeName = (inv.name || 'inventaire')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .slice(0, 60);
+
+    let rows: any[] = [];
+    let sheetName = 'Inventaire';
+    let suffix = 'entries';
+
+    if (tabParam === 'unknowns') {
+      sheetName = 'Produits non trouves';
+      suffix = 'non_trouves';
+      const unknowns = await prisma.inventoryUnknownEntry.findMany({
+        where: { inventoryId: id },
+        include: { location: { select: { name: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+      rows = unknowns.map((u) => ({
+        Date: new Date(u.createdAt).toLocaleString('fr-FR'),
+        Description: u.description,
+        Categorie: u.category || '',
+        Zone: u.location?.name || '',
+        Quantite: u.quantity,
+        Commentaire: u.comment || '',
+        Operateur: u.operatorName || '',
+      }));
+    } else if (tabParam === 'compare') {
+      sheetName = 'Comparaison';
+      suffix = 'comparaison';
+
+      const countedRows = await prisma.inventoryEntry.groupBy({
+        by: ['productId'],
+        where: { inventoryId: id },
+        _sum: { quantity: true },
+      });
+      const countedMap = new Map<string, number>();
+      for (const r of countedRows) countedMap.set(r.productId, r._sum.quantity ?? 0);
+
+      const theoreticalWhere: any = {};
+      if (inv.siteId) theoreticalWhere.siteId = inv.siteId;
+      const theoreticalRows = await prisma.stock.groupBy({
+        by: ['productId'],
+        where: theoreticalWhere,
+        _sum: { quantityNew: true, quantityUsed: true },
+      });
+      const theoreticalMap = new Map<string, number>();
+      for (const r of theoreticalRows) {
+        theoreticalMap.set(
+          r.productId,
+          (r._sum.quantityNew ?? 0) + (r._sum.quantityUsed ?? 0),
+        );
+      }
+
+      const productIds = new Set<string>([...countedMap.keys(), ...theoreticalMap.keys()]);
+      const products = await prisma.product.findMany({
+        where: { id: { in: Array.from(productIds) } },
+        select: { id: true, reference: true, description: true },
+      });
+
+      const allLines = products.map((p) => {
+        const counted = countedMap.get(p.id) ?? 0;
+        const theoretical = theoreticalMap.get(p.id) ?? 0;
+        return {
+          reference: p.reference,
+          description: p.description || '',
+          counted,
+          theoretical,
+          gap: counted - theoretical,
+        };
+      });
+
+      const lines = allLines.filter((l) => {
+        if (filterParam === 'all') return true;
+        if (filterParam === 'gap') return l.gap !== 0;
+        if (filterParam === 'surplus') return l.gap > 0;
+        if (filterParam === 'missing') return l.gap < 0;
+        return true;
+      });
+      lines.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+
+      rows = lines.map((l) => ({
+        Reference: l.reference,
+        Description: l.description,
+        Compte: l.counted,
+        Theorique: l.theoretical,
+        Ecart: l.gap,
+      }));
+    } else {
+      sheetName = 'Saisies';
+      suffix = 'saisies';
+      const entries = await prisma.inventoryEntry.findMany({
+        where: { inventoryId: id },
+        include: {
+          product: { select: { reference: true, description: true, hasSerialNumber: true } },
+          location: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      rows = entries.map((e) => ({
+        Date: new Date(e.createdAt).toLocaleString('fr-FR'),
+        Reference: e.product.reference,
+        Description: e.product.description || '',
+        Zone: e.location?.name || '',
+        Quantite: e.product.hasSerialNumber ? 1 : e.quantity,
+        'N° serie': e.serialNumber || '',
+        Etat: e.state,
+        Commentaire: e.comment || '',
+        Operateur: e.operatorName || '',
+      }));
+    }
+
+    // Build the workbook even when rows is empty so the user still gets a
+    // file with headers (clearer than a 404).
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows, {
+      header: rows[0] ? Object.keys(rows[0]) : undefined,
+    });
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const filename = `${safeName}_${suffix}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   } catch (error) {
     next(error);
   }
