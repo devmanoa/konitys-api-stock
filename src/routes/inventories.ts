@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as inventoryController from '../controllers/inventoryController';
+import * as shareLinkController from '../controllers/inventoryShareLinkController';
 import { requireRole } from '../middleware/auth';
 
 const router = Router();
@@ -20,6 +21,12 @@ router.get('/:id/check-serial', inventoryController.checkSerial);
 router.get('/:id/find-quantitative', inventoryController.findQuantitative);
 router.get('/:id/compare', inventoryController.compare);
 router.get('/:id/export', inventoryController.exportXlsx);
+
+// Share links (admin only). Listing is open to any authenticated user so the
+// inventory detail page can show "0 lien(s)" without 403. Creation/revocation
+// is gated to admin/manager so an operator can't issue a public link.
+router.get('/:id/share-links', shareLinkController.list);
+router.post('/:id/share-links', requireRole('admin', 'manager') as any, shareLinkController.create as any);
 
 // Routes sensibles: clôture, réouverture et — surtout — application des
 // corrections (qui crée des mouvements et modifie les stocks). Réservées

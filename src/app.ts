@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
 import routes from './routes';
+import publicInventoryRoutes from './routes/publicInventory';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -53,6 +54,15 @@ app.get('/', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Public mobile share-link endpoints. Mounted BEFORE /api so they bypass
+// the global Keycloak auth — the linkId in the URL is the credential.
+// All endpoints set no-store so a phone browser doesn't cache stale data
+// after a link gets revoked.
+app.use('/api/public', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+}, publicInventoryRoutes);
 
 // Routes
 app.use('/api', routes);

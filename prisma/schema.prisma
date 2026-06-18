@@ -621,6 +621,8 @@ model User {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  inventoryShareLinks InventoryShareLink[]
+
   @@index([fullName])
   @@map("users")
 }
@@ -645,6 +647,7 @@ model Inventory {
   updatedAt       DateTime         @updatedAt
   entries         InventoryEntry[]
   unknowns        InventoryUnknownEntry[]
+  shareLinks      InventoryShareLink[]
 
   @@map("inventories")
 }
@@ -677,7 +680,13 @@ model InventoryEntry {
 
   @@index([inventoryId, locationId])
   @@index([inventoryId, productId])
+  // Set when the entry was created via a public mobile share link.
+  // Null = entry created from the authenticated desktop app.
+  shareLinkId  String?
+  shareLink    InventoryShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: SetNull)
+
   @@index([inventoryId, serialNumber])
+  @@index([shareLinkId])
   @@map("inventory_entries")
 }
 
@@ -697,9 +706,47 @@ model InventoryUnknownEntry {
   photoUrl     String?
   operatorId   String?
   operatorName String?
+  shareLinkId  String?
+  shareLink    InventoryShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: SetNull)
   createdAt    DateTime  @default(now())
 
   @@index([inventoryId, locationId])
+  @@index([shareLinkId])
   @@map("inventory_unknown_entries")
+}
+
+// Public mobile share link for an inventory. Carries the identity of a
+// pre-selected Keycloak user (set at creation time) so operators don't have
+// to log in — the link itself is the credential. Anyone with the linkId can
+// post entries AS that user. Revocable via revokedAt and time-bounded via
+// expiresAt. Rate limiting is handled at the route level.
+model InventoryShareLink {
+  id              String    @id @default(uuid())
+  inventoryId     String
+  inventory       Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  // The Keycloak user this link impersonates. Stored as the local User.id
+  // for FK integrity (which itself maps to a unique keycloakId).
+  operatorUserId  String
+  operatorUser    User      @relation(fields: [operatorUserId], references: [id], onDelete: Cascade)
+  // Cached at creation time so we can render the link summary without
+  // joining User on every request.
+  operatorName    String
+  // NULL = no expiration. Otherwise the link is rejected after this time.
+  expiresAt       DateTime?
+  // Set when an admin revokes the link. Once set, all reads/writes are 404.
+  revokedAt       DateTime?
+  // Who created the link (Keycloak sub of the admin).
+  createdById     String?
+  createdByName   String?
+  createdAt       DateTime  @default(now())
+  // Loose stats — used by admin UI to show "last seen / N saisies".
+  lastUsedAt      DateTime?
+
+  entries         InventoryEntry[]
+  unknowns        InventoryUnknownEntry[]
+
+  @@index([inventoryId])
+  @@index([operatorUserId])
+  @@map("inventory_share_links")
 }
 
