@@ -3,7 +3,11 @@ import amqp from 'amqplib';
 const RABBITMQ_URL = process.env.RABBITMQ_URL || '';
 const RABBITMQ_HTTP_URL = process.env.RABBITMQ_HTTP_URL || '';
 const RABBITMQ_VHOST = process.env.RABBITMQ_VHOST || '/';
-const EXCHANGE = process.env.RABBITMQ_EXCHANGE || 'platform.events';
+// Exchange partage Konitys. Historiquement 'platform.events' mais la
+// plateforme est passee sur 'konitysevents' (voir guide-consume-users-ref).
+// On garde le nom overridable via env pour le cas ou une prochaine
+// migration change encore le nom.
+const EXCHANGE = process.env.RABBITMQ_EXCHANGE || 'konitysevents';
 const APP_NAME = process.env.APP_NAME || 'stock';
 
 let connection: amqp.ChannelModel | null = null;
@@ -50,6 +54,9 @@ interface CrudEvent {
   id: string | number | null;
   table: string;
   action: 'inserted' | 'updated' | 'archived' | 'deleted';
+  // Emetteur de l'event. Utilise par les consumers pour l'anti-boucle
+  // (`if evt.app === APP_NAME return`). Fait partie du contrat Konitys.
+  app: string;
   data: Record<string, any>;
   timestamp: string;
   actor: Actor | null;
@@ -70,6 +77,7 @@ export async function publishCrudEvent(
     id: data?.id || null,
     table,
     action,
+    app: APP_NAME,
     data,
     timestamp: new Date().toISOString(),
     actor: actor
