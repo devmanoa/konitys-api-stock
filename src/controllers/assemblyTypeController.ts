@@ -12,6 +12,9 @@ const itemsInclude = {
           reference: true,
           description: true,
           imageUrl: true,
+          // partType est un axe orthogonal à partCategory (voir schema.prisma).
+          // Factory groupe la checklist d'assemblage par cette valeur.
+          partType: true,
         },
       },
       partCategory: {

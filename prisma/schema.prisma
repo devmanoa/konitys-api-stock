@@ -13,6 +13,18 @@ enum SupplyRisk {
   LOW
 }
 
+/// Type/nature d'une pièce, orthogonal à PartCategory (qui décrit la localisation
+/// physique : Tête / Pied / Socle...). Utilisé côté Factory pour grouper la
+/// checklist d'assemblage en zones fonctionnelles :
+///   EQUIPMENT  = gros modules fonctionnels (écran, imprimante, carte, alim)
+///   PROTECTION = protection physique (vitres, capots, mousses anti-choc)
+///   HARDWARE   = visserie et petites fixations (vis, écrous, rondelles, colliers)
+enum PartType {
+  EQUIPMENT
+  PROTECTION
+  HARDWARE
+}
+
 enum MovementType {
   IN
   OUT
@@ -230,6 +242,10 @@ model Product {
   reference        String            @unique
   description      String?
   supplyRisk       SupplyRisk?
+  /// Type de pièce (voir enum PartType). Utilisé par Factory pour grouper
+  /// la checklist d'assemblage. Null = non renseigné, la pièce sera cachée
+  /// dans les checklists Factory (à taguer explicitement).
+  partType         PartType?
   location         String?
   locationId       String?
   storageLocation  Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)

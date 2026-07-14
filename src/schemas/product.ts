@@ -4,6 +4,12 @@ export const createProductSchema = z.object({
   reference: z.string().min(1, 'La référence est requise').max(50),
   description: z.string().max(255).optional(),
   supplyRisk: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+  /**
+   * Type de pièce (orthogonal à PartCategory). Utilisé par Factory pour
+   * grouper la checklist d'assemblage. Null autorisé : la pièce sera
+   * cachée dans les checklists jusqu'à ce qu'elle soit taguée.
+   */
+  partType: z.enum(['EQUIPMENT', 'PROTECTION', 'HARDWARE']).optional().nullable(),
   location: z.string().max(20).optional(),
   locationId: z.string().uuid().optional().nullable(),
   assemblyId: z.string().uuid().optional().nullable().transform(val => val || undefined),
