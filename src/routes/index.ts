@@ -19,6 +19,7 @@ import userRoutes from './users';
 import inventoryRoutes from './inventories';
 import shareLinkRoutes from './shareLinks';
 import { serialItemsForProductRouter, serialItemsRouter } from './serialItems';
+import adminRoutes from './admin';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -52,5 +53,6 @@ router.use('/order-templates', orderTemplateRoutes);
 router.use('/users', userRoutes);
 router.use('/inventories', inventoryRoutes);
 router.use('/share-links', shareLinkRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;
