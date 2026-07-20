@@ -123,3 +123,54 @@ export async function backfillPartTypes(req: AuthenticatedRequest, res: Response
     },
   });
 }
+
+/**
+ * POST /api/admin/bulk-set-part-type
+ *   body: { productIds: string[], partType: PartType }
+ *
+ * Assigne le meme partType a un lot de produits (selection manuelle depuis
+ * l'UI). Utilise apres le backfill auto pour rattraper les produits qui
+ * n'ont pas matche l'heuristique.
+ */
+export async function bulkSetPartType(req: AuthenticatedRequest, res: Response) {
+  const { productIds, partType } = req.body as {
+    productIds?: unknown;
+    partType?: unknown;
+  };
+
+  if (!Array.isArray(productIds) || productIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'productIds requis' });
+  }
+  if (productIds.some((id) => typeof id !== 'string')) {
+    return res.status(400).json({ success: false, error: 'productIds invalides' });
+  }
+  const validTypes: PartType[] = ['EQUIPMENT', 'PROTECTION', 'HARDWARE'];
+  if (typeof partType !== 'string' || !validTypes.includes(partType as PartType)) {
+    return res.status(400).json({ success: false, error: 'partType invalide' });
+  }
+
+  const ids = productIds as string[];
+  const type = partType as PartType;
+
+  const result = await prisma.product.updateMany({
+    where: { id: { in: ids } },
+    data: { partType: type },
+  });
+
+  // Publier un event par produit pour que les consumers (Factory) invalident
+  // leurs caches. On ne recharge pas les rows depuis Prisma, on envoie juste
+  // l'id + le nouveau partType — suffisant pour un cache refresh.
+  for (const id of ids) {
+    publishCrudEvent(
+      'products',
+      'updated',
+      { id, partType: type } as any,
+      req.user,
+    );
+  }
+
+  res.json({
+    success: true,
+    data: { updated: result.count, partType: type },
+  });
+}

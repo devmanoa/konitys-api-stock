@@ -8,5 +8,6 @@ const router = Router();
 router.use(requireRole('admin') as any);
 
 router.post('/backfill-part-types', adminBackfillController.backfillPartTypes as any);
+router.post('/bulk-set-part-type', adminBackfillController.bulkSetPartType as any);
 
 export default router;
