@@ -10,6 +10,7 @@ const router = Router();
 
 router.get('/', validateQuery(productQuerySchema), productController.getAll);
 router.get('/:id', productController.getById);
+router.post('/preview-reference', productController.previewReference);
 router.post('/', validateBody(createProductSchema), productController.create);
 router.put('/:id', validateBody(updateProductSchema), productController.update);
 router.delete('/:id', productController.remove);

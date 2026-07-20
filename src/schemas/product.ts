@@ -1,7 +1,14 @@
 import { z } from 'zod';
 
 export const createProductSchema = z.object({
-  reference: z.string().min(1, 'La référence est requise').max(50),
+  // Optionnel : si absent ET que productCategoryId + brand + model sont
+  // fournis, la ref sera générée automatiquement côté controller.
+  reference: z.string().max(50).optional(),
+  /**
+   * Nom lisible affiché aux utilisateurs (ex : "Imprimante DNP DS620").
+   * Peut différer de la référence interne.
+   */
+  name: z.string().max(120).optional().nullable(),
   description: z.string().max(255).optional(),
   supplyRisk: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   /**
@@ -10,6 +17,14 @@ export const createProductSchema = z.object({
    * cachée dans les checklists jusqu'à ce qu'elle soit taguée.
    */
   partType: z.enum(['EQUIPMENT', 'PROTECTION', 'HARDWARE']).optional().nullable(),
+  /**
+   * Catégorie principale (Imprimante / PC / Écran / ...) — sert de
+   * préfixe pour la génération auto de la référence.
+   */
+  productCategoryId: z.string().uuid().optional().nullable(),
+  brand: z.string().max(40).optional().nullable(),
+  model: z.string().max(60).optional().nullable(),
+  variant: z.string().max(40).optional().nullable(),
   location: z.string().max(20).optional(),
   locationId: z.string().uuid().optional().nullable(),
   assemblyId: z.string().uuid().optional().nullable().transform(val => val || undefined),

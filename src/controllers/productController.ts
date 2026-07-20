@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { ProductQueryInput } from '../schemas/product';
 import { AppError } from '../middleware/errorHandler';
 import { publishCrudEvent } from '../services/rabbitmq';
+import { generateUniqueReference } from '../utils/reference';
 import {
   diffScalars,
   diffAssemblyTypes,
@@ -176,6 +177,31 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
       id: authUser?.id ?? null,
       name: authUser?.fullName || authUser?.username || null,
     };
+
+    // Génération automatique de la référence si absente ET si on a de quoi
+    // la construire (productCategoryId + brand + model minimum). Sinon on
+    // laisse le champ reference du body faire foi (compat avec l'existant).
+    const refFromBody = typeof data.reference === 'string' ? data.reference.trim() : '';
+    if (!refFromBody && data.productCategoryId && data.brand && data.model) {
+      const cat = await prisma.productCategory.findUnique({
+        where: { id: data.productCategoryId },
+        select: { codeReference: true },
+      });
+      if (!cat) {
+        throw new AppError('Catégorie principale introuvable', 400);
+      }
+      data.reference = await generateUniqueReference({
+        code: cat.codeReference,
+        brand: data.brand,
+        model: data.model,
+        variant: data.variant,
+      });
+    } else if (!refFromBody) {
+      throw new AppError(
+        "Référence manquante : fournissez une référence, ou une catégorie principale + marque + modèle pour la générer",
+        400,
+      );
+    }
 
     const product = await prisma.$transaction(async (tx) => {
       const created = await tx.product.create({
@@ -415,6 +441,52 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
     publishCrudEvent('products', 'deleted', { id }, (req as any).user);
 
     res.json({ success: true, message: 'Produit supprimé' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/products/preview-reference
+ *   body: { productCategoryId, brand, model, variant? }
+ *
+ * Retourne la référence qui SERAIT générée si on créait ce produit
+ * maintenant (avec le suffixe de désambiguïsation si collision). Utilisé
+ * par ProductForm pour afficher une preview live pendant la saisie.
+ * Aucune écriture DB.
+ */
+export const previewReference = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { productCategoryId, brand, model, variant } = req.body as {
+      productCategoryId?: string;
+      brand?: string;
+      model?: string;
+      variant?: string;
+    };
+    if (!productCategoryId || !brand || !model) {
+      return res.json({ success: true, data: { reference: null } });
+    }
+    const cat = await prisma.productCategory.findUnique({
+      where: { id: productCategoryId },
+      select: { codeReference: true },
+    });
+    if (!cat) {
+      return res.status(404).json({
+        success: false,
+        error: 'Catégorie principale introuvable',
+      });
+    }
+    const reference = await generateUniqueReference({
+      code: cat.codeReference,
+      brand,
+      model,
+      variant,
+    });
+    res.json({ success: true, data: { reference } });
   } catch (error) {
     next(error);
   }

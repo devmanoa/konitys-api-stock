@@ -239,13 +239,29 @@ model Location {
 
 model Product {
   id               String            @id @default(uuid())
+  /// Référence interne (unique). Générée automatiquement à partir de
+  /// productCategory.codeReference + brand + model + variant pour les
+  /// nouveaux produits ; laissée intacte pour les anciens (stables).
   reference        String            @unique
+  /// Nom lisible affiché aux utilisateurs (ex : "Imprimante DNP DS620").
+  /// Peut différer de la référence interne.
+  name             String?
   description      String?
   supplyRisk       SupplyRisk?
   /// Type de pièce (voir enum PartType). Utilisé par Factory pour grouper
   /// la checklist d'assemblage. Null = non renseigné, la pièce sera cachée
   /// dans les checklists Factory (à taguer explicitement).
   partType         PartType?
+  /// Catégorie principale (Imprimante / PC / Écran / ...). Sert de préfixe
+  /// pour la génération de la référence interne (voir productCategoryController).
+  productCategoryId String?
+  productCategory   ProductCategory? @relation(fields: [productCategoryId], references: [id], onDelete: SetNull)
+  /// Composants de la référence — utilisés uniquement à la création
+  /// (concaténés + normalisés dans reference). Conservés pour l'affichage
+  /// et les futures régénérations à la demande.
+  brand            String?
+  model            String?
+  variant          String?
   location         String?
   locationId       String?
   storageLocation  Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
@@ -643,6 +659,7 @@ model ProductCategory {
   displayOrder   Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  products       Product[]
 
   @@index([isActive, displayOrder])
   @@map("product_categories")
