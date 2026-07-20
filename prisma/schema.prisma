@@ -622,6 +622,32 @@ model ProductPartCategory {
   @@map("product_part_categories")
 }
 
+/// Catégorie principale d'un produit (Imprimante, PC, Écran, Câble, …).
+/// Sert de préfixe pour la génération automatique de la référence interne
+/// (voir docs "Règle de génération des références produit").
+/// Distincte de PartCategory (localisation) et PartType (nature).
+model ProductCategory {
+  id             String   @id @default(uuid())
+  /// Nom lisible affiché aux utilisateurs (ex: "Imprimante").
+  name           String   @unique
+  /// Code utilisé comme préfixe des références produit (ex: "IMPR").
+  /// Normalisé automatiquement en majuscules sans accents.
+  codeReference  String   @unique
+  /// Description optionnelle.
+  description    String?
+  /// Actif = disponible pour la création de nouveaux produits.
+  /// Désactivée = restera visible sur les produits existants mais non
+  /// proposée dans les dropdowns de création.
+  isActive       Boolean  @default(true)
+  /// Ordre d'affichage dans les listes (ascendant, 0 en premier).
+  displayOrder   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
+  @@map("product_categories")
+}
+
 // Local cache of platform users. Upserted at every login (see /users/sync)
 // so we can render avatars, full name and profile picture for any operator
 // that has ever connected, without round-tripping the gateway each time.
