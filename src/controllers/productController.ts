@@ -108,12 +108,20 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
+// Accepte un UUID (recherche par id) ou une référence (ex: IMPR-DNP-DS620).
+// Cette souplesse permet aux QR codes SZ:v1:PRODUCT:<REF> de résoudre le
+// produit sans passer par un endpoint séparé.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const getById = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const id = req.params.id as string;
+    const key = req.params.id as string;
+    const where = UUID_REGEX.test(key)
+      ? { id: key }
+      : { reference: key };
 
     const product = await prisma.product.findUnique({
-      where: { id },
+      where: where as any,
       include: {
         assembly: {
           include: {
