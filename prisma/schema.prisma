@@ -18,11 +18,11 @@ enum SupplyRisk {
 /// checklist d'assemblage en zones fonctionnelles :
 ///   EQUIPMENT  = gros modules fonctionnels (écran, imprimante, carte, alim)
 ///   PROTECTION = protection physique (vitres, capots, mousses anti-choc)
-///   HARDWARE   = visserie et petites fixations (vis, écrous, rondelles, colliers)
+///   ACCESSORY  = accessoires / visserie / petites fixations (vis, écrous, rondelles, colliers, câbles courts)
 enum PartType {
   EQUIPMENT
   PROTECTION
-  HARDWARE
+  ACCESSORY
 }
 
 enum MovementType {
@@ -248,10 +248,6 @@ model Product {
   name             String?
   description      String?
   supplyRisk       SupplyRisk?
-  /// Type de pièce (voir enum PartType). Utilisé par Factory pour grouper
-  /// la checklist d'assemblage. Null = non renseigné, la pièce sera cachée
-  /// dans les checklists Factory (à taguer explicitement).
-  partType         PartType?
   /// Catégorie principale (Imprimante / PC / Écran / ...). Sert de préfixe
   /// pour la génération de la référence interne (voir productCategoryController).
   productCategoryId String?
@@ -641,7 +637,7 @@ model ProductPartCategory {
 /// Catégorie principale d'un produit (Imprimante, PC, Écran, Câble, …).
 /// Sert de préfixe pour la génération automatique de la référence interne
 /// (voir docs "Règle de génération des références produit").
-/// Distincte de PartCategory (localisation) et PartType (nature).
+/// Distincte de PartCategory (localisation Tête/Pied/Socle).
 model ProductCategory {
   id             String   @id @default(uuid())
   /// Nom lisible affiché aux utilisateurs (ex: "Imprimante").
@@ -651,6 +647,12 @@ model ProductCategory {
   codeReference  String   @unique
   /// Description optionnelle.
   description    String?
+  /// Nature du composant (Équipement / Protection / Visserie).
+  /// Utilisé par Factory pour grouper la checklist d'assemblage —
+  /// dérivé automatiquement sur chaque Product de la catégorie.
+  /// Null = pas encore taggée (les produits seront cachés dans la
+  /// checklist Factory tant que la catégorie n'est pas taguée).
+  partType       PartType?
   /// Actif = disponible pour la création de nouveaux produits.
   /// Désactivée = restera visible sur les produits existants mais non
   /// proposée dans les dropdowns de création.
@@ -662,6 +664,7 @@ model ProductCategory {
   products       Product[]
 
   @@index([isActive, displayOrder])
+  @@index([partType])
   @@map("product_categories")
 }
 

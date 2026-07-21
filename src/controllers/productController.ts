@@ -4,6 +4,19 @@ import { ProductQueryInput } from '../schemas/product';
 import { AppError } from '../middleware/errorHandler';
 import { publishCrudEvent } from '../services/rabbitmq';
 import { generateUniqueReference } from '../utils/reference';
+
+/**
+ * Aplati product.productCategory.partType en product.partType pour compat
+ * avec les anciens consumers (Factory, frontend Stock). PartType est
+ * desormais porte par la ProductCategory (voir schema.prisma).
+ */
+function reshapeProduct<T extends { productCategory?: { partType?: any } | null } | null>(p: T): T {
+  if (!p) return p;
+  return {
+    ...(p as any),
+    partType: p.productCategory?.partType ?? null,
+  } as T;
+}
 import {
   diffScalars,
   diffAssemblyTypes,
@@ -83,6 +96,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
           partCategories: {
             include: { partCategory: true },
           },
+          productCategory: true,
           externalLinks: { orderBy: { position: 'asc' } },
           storageLocation: { include: { site: true, parent: { include: { site: true } } } },
         },
@@ -95,7 +109,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
 
     res.json({
       success: true,
-      data: products,
+      data: products.map(reshapeProduct),
       pagination: {
         page,
         limit,
@@ -157,6 +171,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
         partCategories: {
           include: { partCategory: true },
         },
+        productCategory: true,
         externalLinks: { orderBy: { position: 'asc' } },
         storageLocation: { include: { site: true, parent: { include: { site: true } } } },
       },
@@ -166,7 +181,7 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
       throw new AppError('Produit non trouvé', 404);
     }
 
-    res.json({ success: true, data: product });
+    res.json({ success: true, data: reshapeProduct(product as any) });
   } catch (error) {
     next(error);
   }
@@ -263,14 +278,16 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           assembly: true,
           assemblyTypes: { include: { assemblyType: true } },
           partCategories: { include: { partCategory: true } },
+          productCategory: true,
           externalLinks: { orderBy: { position: 'asc' } },
         },
       });
     });
 
-    publishCrudEvent('products', 'inserted', product as any, (req as any).user);
+    const reshaped = reshapeProduct(product as any);
+    publishCrudEvent('products', 'inserted', reshaped as any, (req as any).user);
 
-    res.status(201).json({ success: true, data: product });
+    res.status(201).json({ success: true, data: reshaped });
   } catch (error) {
     next(error);
   }
@@ -412,14 +429,16 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
           assembly: true,
           assemblyTypes: { include: { assemblyType: true } },
           partCategories: { include: { partCategory: true } },
+          productCategory: true,
           externalLinks: { orderBy: { position: 'asc' } },
         },
       });
     });
 
-    publishCrudEvent('products', 'updated', product as any, (req as any).user);
+    const reshaped = reshapeProduct(product as any);
+    publishCrudEvent('products', 'updated', reshaped as any, (req as any).user);
 
-    res.json({ success: true, data: product });
+    res.json({ success: true, data: reshaped });
   } catch (error) {
     next(error);
   }

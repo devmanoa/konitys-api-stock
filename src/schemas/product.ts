@@ -12,14 +12,10 @@ export const createProductSchema = z.object({
   description: z.string().max(255).optional(),
   supplyRisk: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   /**
-   * Type de pièce (orthogonal à PartCategory). Utilisé par Factory pour
-   * grouper la checklist d'assemblage. Null autorisé : la pièce sera
-   * cachée dans les checklists jusqu'à ce qu'elle soit taguée.
-   */
-  partType: z.enum(['EQUIPMENT', 'PROTECTION', 'HARDWARE']).optional().nullable(),
-  /**
    * Catégorie principale (Imprimante / PC / Écran / ...) — sert de
-   * préfixe pour la génération auto de la référence.
+   * préfixe pour la génération auto de la référence. Porte aussi le
+   * partType (Équipement / Protection / Accessoire) qui remplace
+   * l'ancien Product.partType.
    */
   productCategoryId: z.string().uuid().optional().nullable(),
   brand: z.string().max(40).optional().nullable(),

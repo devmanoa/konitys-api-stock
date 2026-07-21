@@ -43,9 +43,19 @@ export const getAll = async (_req: Request, res: Response, next: NextFunction) =
   }
 };
 
+const VALID_PART_TYPES = ['EQUIPMENT', 'PROTECTION', 'ACCESSORY'] as const;
+type PartType = (typeof VALID_PART_TYPES)[number];
+
+function coercePartType(v: unknown): PartType | null {
+  if (v === undefined) return null;
+  if (v === null || v === '') return null;
+  if (typeof v !== 'string') return null;
+  return (VALID_PART_TYPES as readonly string[]).includes(v) ? (v as PartType) : null;
+}
+
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, codeReference, description, isActive, displayOrder } = req.body;
+    const { name, codeReference, description, isActive, displayOrder, partType } = req.body;
     const normalizedName = normalizeName(name || '');
     const normalizedCode = normalizeCode(codeReference || '');
     if (!normalizedName) throw new AppError('Le nom est requis', 400);
@@ -77,6 +87,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         description: description ?? null,
         isActive: typeof isActive === 'boolean' ? isActive : true,
         displayOrder: Number.isFinite(Number(displayOrder)) ? Number(displayOrder) : 0,
+        partType: coercePartType(partType),
       },
     });
 
@@ -92,13 +103,14 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     const existing = await prisma.productCategory.findUnique({ where: { id } });
     if (!existing) throw new AppError('Catégorie non trouvée', 404);
 
-    const { name, codeReference, description, isActive, displayOrder } = req.body;
+    const { name, codeReference, description, isActive, displayOrder, partType } = req.body;
     const data: {
       name?: string;
       codeReference?: string;
       description?: string | null;
       isActive?: boolean;
       displayOrder?: number;
+      partType?: PartType | null;
     } = {};
 
     if (name !== undefined) {
@@ -144,6 +156,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     if (description !== undefined) data.description = description;
     if (typeof isActive === 'boolean') data.isActive = isActive;
     if (Number.isFinite(Number(displayOrder))) data.displayOrder = Number(displayOrder);
+    if (partType !== undefined) data.partType = coercePartType(partType);
 
     const category = await prisma.productCategory.update({ where: { id }, data });
     res.json({ success: true, data: category });

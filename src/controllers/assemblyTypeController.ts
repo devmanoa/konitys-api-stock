@@ -12,9 +12,14 @@ const itemsInclude = {
           reference: true,
           description: true,
           imageUrl: true,
-          // partType est un axe orthogonal à partCategory (voir schema.prisma).
-          // Factory groupe la checklist d'assemblage par cette valeur.
-          partType: true,
+          // partType est desormais porte par la ProductCategory (nature
+          // du composant : EQUIPMENT / PROTECTION / ACCESSORY). Factory
+          // groupe la checklist d'assemblage par cette valeur — on hisse
+          // le champ au niveau `product` dans reshapeAssemblyType()
+          // ci-dessous pour eviter tout changement dans Factory.
+          productCategory: {
+            select: { partType: true },
+          },
         },
       },
       partCategory: {
@@ -26,6 +31,29 @@ const itemsInclude = {
     },
   },
 } as const;
+
+/**
+ * Aplati assemblyType.items[].product.productCategory.partType en
+ * assemblyType.items[].product.partType. Compat 1-pour-1 avec le shape
+ * historique consomme par Factory (StockAssemblyTypeItem.product.partType).
+ */
+function reshapeAssemblyType<T extends { items?: any[] }>(at: T): T {
+  if (!at?.items) return at;
+  return {
+    ...at,
+    items: at.items.map((it) => ({
+      ...it,
+      product: it.product
+        ? {
+            ...it.product,
+            partType: it.product.productCategory?.partType ?? null,
+            // On garde productCategory dans la reponse pour ne casser aucun
+            // consumer qui l'utiliserait, mais Factory n'en a pas besoin.
+          }
+        : it.product,
+    })),
+  };
+}
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -58,7 +86,7 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
 
     res.json({
       success: true,
-      data: assemblyTypes,
+      data: assemblyTypes.map(reshapeAssemblyType),
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -99,10 +127,10 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
       throw new AppError('Type borne non trouvé', 404);
     }
 
-    const data = {
+    const data = reshapeAssemblyType({
       ...assemblyType,
       assemblies: assemblyType.assemblies.map((a) => a.assembly),
-    };
+    });
 
     res.json({ success: true, data });
   } catch (error) {
@@ -140,7 +168,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
     publishCrudEvent('assembly_types', 'inserted', assemblyType as any, (req as any).user);
 
-    res.status(201).json({ success: true, data: assemblyType });
+    res.status(201).json({ success: true, data: reshapeAssemblyType(assemblyType) });
   } catch (error) {
     next(error);
   }
@@ -186,7 +214,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
 
     publishCrudEvent('assembly_types', 'updated', assemblyType as any, (req as any).user);
 
-    res.json({ success: true, data: assemblyType });
+    res.json({ success: true, data: reshapeAssemblyType(assemblyType) });
   } catch (error) {
     next(error);
   }
@@ -238,10 +266,17 @@ export const getBuildable = async (_req: Request, res: Response, next: NextFunct
     const result = typesWithItems.map((t) => {
       const components = t.items.map((it) => {
         const currentStock = stockByProduct.get(it.productId) ?? 0;
+        // Compat : hisser partType depuis productCategory (nouveau modele)
+        const product = it.product
+          ? {
+              ...it.product,
+              partType: (it.product as any).productCategory?.partType ?? null,
+            }
+          : it.product;
         return {
           id: it.id,
           productId: it.productId,
-          product: it.product,
+          product,
           required: it.quantity,
           currentStock,
           section: it.partCategory ? it.partCategory.name : null,
