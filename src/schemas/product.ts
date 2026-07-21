@@ -53,6 +53,7 @@ export const productQuerySchema = z.object({
   assemblyId: z.string().uuid().optional(),
   assemblyTypeId: z.string().uuid().optional(),
   partCategoryId: z.string().uuid().optional(),
+  productCategoryId: z.string().uuid().optional(),
   hasSerialNumber: z
     .enum(['true', 'false'])
     .optional()

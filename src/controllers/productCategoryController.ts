@@ -32,9 +32,28 @@ function normalizeName(input: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-export const getAll = async (_req: Request, res: Response, next: NextFunction) => {
+const VALID_PART_TYPES_LIST = ['EQUIPMENT', 'PROTECTION', 'ACCESSORY'] as const;
+type PartTypeInner = (typeof VALID_PART_TYPES_LIST)[number];
+function coercePartTypeParam(v: unknown): PartTypeInner | null {
+  if (typeof v !== 'string' || !v) return null;
+  return (VALID_PART_TYPES_LIST as readonly string[]).includes(v)
+    ? (v as PartTypeInner)
+    : null;
+}
+
+export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Filtres optionnels : ?partType=EQUIPMENT&isActive=true
+    const partTypeParam = typeof req.query.partType === 'string' ? req.query.partType : undefined;
+    const isActiveParam = typeof req.query.isActive === 'string' ? req.query.isActive : undefined;
+    const where: { partType?: PartTypeInner; isActive?: boolean } = {};
+    const pt = coercePartTypeParam(partTypeParam);
+    if (pt) where.partType = pt;
+    if (isActiveParam === 'true') where.isActive = true;
+    else if (isActiveParam === 'false') where.isActive = false;
+
     const categories = await prisma.productCategory.findMany({
+      where,
       orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
     });
     res.json({ success: true, data: categories });

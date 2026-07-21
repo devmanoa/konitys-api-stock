@@ -26,7 +26,7 @@ import {
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page, limit, search, supplyRisk, supplierId, assemblyId, assemblyTypeId, partCategoryId, hasSerialNumber, sortBy, sortOrder } = (req as any).parsedQuery as ProductQueryInput;
+    const { page, limit, search, supplyRisk, supplierId, assemblyId, assemblyTypeId, partCategoryId, productCategoryId, hasSerialNumber, sortBy, sortOrder } = (req as any).parsedQuery as ProductQueryInput;
 
     const where: any = {};
 
@@ -59,6 +59,10 @@ export const getAll = async (req: Request, res: Response, next: NextFunction) =>
       where.partCategories = {
         some: { partCategoryId },
       };
+    }
+
+    if (productCategoryId) {
+      where.productCategoryId = productCategoryId;
     }
 
     if (hasSerialNumber !== undefined) {
