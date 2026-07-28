@@ -9,4 +9,8 @@ router.use(requireRole('admin') as any);
 
 router.post('/seed-product-categories', adminBackfillController.seedProductCategories as any);
 
+// DB export/import (backup / restore complet)
+router.get('/db-export', adminBackfillController.dbExport as any);
+router.post('/db-import', adminBackfillController.dbImport as any);
+
 export default router;
