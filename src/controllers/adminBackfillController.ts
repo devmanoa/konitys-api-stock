@@ -130,11 +130,11 @@ const EXPORT_TABLES = [
   // Order templates
   'orderTemplate',
   'orderTemplateItem',
-  // Inventory
+  // Inventory : shareLink AVANT entry (FK inventory_entries.shareLinkId)
   'inventory',
+  'inventoryShareLink',
   'inventoryEntry',
   'inventoryUnknownEntry',
-  'inventoryShareLink',
 ] as const;
 
 /**
@@ -287,13 +287,42 @@ export async function dbImport(req: AuthenticatedRequest, res: Response) {
           skipDuplicates: true,
         });
         restoredCounts[tableName] = result?.count ?? scalarRows.length;
-      } catch (err) {
-        // On log mais on continue pour donner un rapport complet
-        console.error(
-          `[db-import] Restore ${tableName} échoué :`,
-          err instanceof Error ? err.message : String(err),
+      } catch (batchErr) {
+        // createMany est atomique : si une ligne casse (FK invalide,
+        // unique conflict...), TOUT le batch est reject. On retombe
+        // sur du one-by-one pour ne perdre que les rows problematiques.
+        console.warn(
+          `[db-import] createMany ${tableName} echoue, fallback one-by-one :`,
+          batchErr instanceof Error ? batchErr.message : String(batchErr),
         );
-        restoredCounts[tableName] = -1;
+        let ok = 0;
+        let ko = 0;
+        for (const row of scalarRows) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (prisma as any)[tableName].create({ data: row });
+            ok++;
+          } catch (rowErr) {
+            ko++;
+            if (ko <= 3) {
+              // Log les 3 premieres erreurs pour debug, pas plus (bruit)
+              console.warn(
+                `[db-import] ${tableName} skip row :`,
+                rowErr instanceof Error ? rowErr.message : String(rowErr),
+              );
+            }
+          }
+        }
+        if (ko > 3) {
+          console.warn(
+            `[db-import] ${tableName} : ${ko} rows totalement skippees (voir logs ci-dessus pour les 3 premieres)`,
+          );
+        }
+        restoredCounts[tableName] = ok;
+        if (ko > 0) {
+          // On stocke le nombre de skips a cote pour l'affichage UI
+          restoredCounts[`${tableName}__skipped`] = ko;
+        }
       }
     }
 
