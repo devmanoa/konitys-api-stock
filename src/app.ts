@@ -20,8 +20,11 @@ app.use(cors({
   origin: corsOrigin === '*' ? true : corsOrigin.includes(',') ? corsOrigin.split(',') : corsOrigin,
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Limite volontairement haute pour permettre l'endpoint /admin/db-import
+// qui recoit un dump JSON complet (peut atteindre 100+ MB sur une DB
+// avec beaucoup de mouvements/audit logs).
+app.use(express.json({ limit: '200mb' }));
+app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 
 // Serve uploaded files with CORS + security headers.
 //   - Images under /uploads/products/* may be inlined (used by <img>).
