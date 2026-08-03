@@ -14,19 +14,55 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Allowlist mime->safe extension. On IGNORE l'extension du fichier fourni par
+// l'attaquant (path.extname(file.originalname)) et on mappe strictement le
+// mime declare a une extension serveur choisie ici. Sans ca, un attaquant
+// authentifie pouvait uploader n'importe quoi (.exe, .bat, .phtml, .svg avec
+// <script>...). Le mime user-fourni est de toute facon deja renvoye ensuite
+// au frontend, donc si le mime n'est pas dans cette liste on refuse frontalement.
+const ATTACHMENT_EXT: Record<string, string> = {
+  // Images (photos de PL, scan bon de livraison)
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  // PDF (le plus frequent : facture / BL)
+  'application/pdf': '.pdf',
+  // Office (facture / devis)
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.ms-powerpoint': '.ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  // OpenDocument
+  'application/vnd.oasis.opendocument.text': '.odt',
+  'application/vnd.oasis.opendocument.spreadsheet': '.ods',
+  // Archives (parfois un fournisseur envoie un .zip)
+  'application/zip': '.zip',
+  'application/x-zip-compressed': '.zip',
+  // Text
+  'text/plain': '.txt',
+  'text/csv': '.csv',
+};
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
+    const ext = ATTACHMENT_EXT[file.mimetype];
+    if (!ext) return cb(new Error('Type de fichier non supporté'), '');
     cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
 
-// "Tous fichiers acceptés" per the product owner — no mime filter, just a size cap.
-// 10 MB keeps a single PDF/photo/invoice while preventing dump abuse.
 export const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ATTACHMENT_EXT[file.mimetype]) cb(null, true);
+    else cb(new Error(`Type de fichier non supporté (${file.mimetype})`));
+  },
 });
 
 export const list = async (req: Request, res: Response, next: NextFunction) => {

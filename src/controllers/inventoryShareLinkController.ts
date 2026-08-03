@@ -61,12 +61,33 @@ export const create = async (
 };
 
 // GET /api/inventories/:id/share-links
-export const list = async (req: Request, res: Response, next: NextFunction) => {
+//
+// SECURITY: le champ `id` d'un share-link EST la credential publique — quiconque
+// le possede peut POST/DELETE des entries en usurpant l'operateur cible via
+// /api/public/inventory/<id>. Cette route reste ouverte a tout utilisateur
+// authentifie (pour que la page detail d'inventaire puisse afficher le compteur
+// "0 lien(s)" sans 403), MAIS elle ne doit jamais renvoyer `id` ni `linkUrl`
+// aux clients non admin/manager. Les admins/managers passent par
+// /api/share-links/mine ou re-fetchent la creation.
+export const list = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const inventoryId = String(req.params.id);
+    const roles = req.user?.roles || [];
+    const canSeeSecret = roles.includes('admin') || roles.includes('manager');
+
     const links = await prisma.inventoryShareLink.findMany({
       where: { inventoryId },
-      include: {
+      select: {
+        // id ommited by default — only exposed to admin/manager below
+        ...(canSeeSecret ? { id: true } : {}),
+        inventoryId: true,
+        operatorUserId: true,
+        operatorName: true,
+        expiresAt: true,
+        revokedAt: true,
+        lastUsedAt: true,
+        createdAt: true,
+        createdByName: true,
         operatorUser: {
           select: { id: true, fullName: true, photoNom: true },
         },
