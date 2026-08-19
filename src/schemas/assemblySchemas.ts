@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from './common';
 
 export const createAssemblySchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
@@ -12,8 +13,7 @@ export const updateAssemblySchema = z.object({
   assemblyTypeIds: z.array(z.string().uuid()).optional(),
 });
 
-export const querySchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
+export const querySchema = paginationSchema.extend({
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   search: z.string().optional(),
 });

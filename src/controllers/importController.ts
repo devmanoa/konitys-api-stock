@@ -1,10 +1,11 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import * as XLSX from 'xlsx';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
+import { asyncHandler } from '../utils/asyncHandler';
 
 interface ImportResult {
   products: { created: number; updated: number; errors: string[] };
@@ -17,51 +18,47 @@ interface ImportResult {
 }
 
 // Preview import data without saving
-export const previewImport = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (!req.file) {
-      throw new AppError('Aucun fichier fourni', 400);
-    }
-
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetNames = workbook.SheetNames;
-
-    const preview: Record<string, { headers: string[]; rows: number; sample: any[] }> = {};
-
-    sheetNames.forEach((name) => {
-      const sheet = workbook.Sheets[name];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-
-      if (data.length > 0) {
-        const headers = data[0] as string[];
-        const rows = data.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ''));
-
-        preview[name] = {
-          headers: headers.filter(h => h),
-          rows: rows.length,
-          sample: rows.slice(0, 5).map(row => {
-            const obj: Record<string, any> = {};
-            headers.forEach((h, i) => {
-              if (h) obj[h] = row[i];
-            });
-            return obj;
-          }),
-        };
-      }
-    });
-
-    res.json({
-      success: true,
-      data: {
-        fileName: req.file.originalname,
-        sheets: preview,
-        availableSheets: sheetNames,
-      },
-    });
-  } catch (error) {
-    next(error);
+export const previewImport = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    throw new AppError('Aucun fichier fourni', 400);
   }
-};
+
+  const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const sheetNames = workbook.SheetNames;
+
+  const preview: Record<string, { headers: string[]; rows: number; sample: any[] }> = {};
+
+  sheetNames.forEach((name) => {
+    const sheet = workbook.Sheets[name];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+    if (data.length > 0) {
+      const headers = data[0] as string[];
+      const rows = data.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ''));
+
+      preview[name] = {
+        headers: headers.filter(h => h),
+        rows: rows.length,
+        sample: rows.slice(0, 5).map(row => {
+          const obj: Record<string, any> = {};
+          headers.forEach((h, i) => {
+            if (h) obj[h] = row[i];
+          });
+          return obj;
+        }),
+      };
+    }
+  });
+
+  res.json({
+    success: true,
+    data: {
+      fileName: req.file.originalname,
+      sheets: preview,
+      availableSheets: sheetNames,
+    },
+  });
+});
 
 // Detect if workbook uses the flat format (sheets = assembly types with product+supplier in same rows)
 function isFlatFormat(workbook: XLSX.WorkBook): boolean {
@@ -81,47 +78,43 @@ function isFlatFormat(workbook: XLSX.WorkBook): boolean {
 }
 
 // Full import from Excel file
-export const importExcel = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (!req.file) {
-      throw new AppError('Aucun fichier fourni', 400);
-    }
-
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', bookFiles: true });
-
-    const result: ImportResult = {
-      products: { created: 0, updated: 0, errors: [] },
-      suppliers: { created: 0, updated: 0, errors: [] },
-      productSuppliers: { created: 0, updated: 0, errors: [] },
-      sites: { created: 0, errors: [] },
-      stocks: { created: 0, updated: 0, errors: [] },
-      movements: { created: 0, errors: [] },
-      orders: { created: 0, errors: [] },
-    };
-
-    if (isFlatFormat(workbook)) {
-      // New flat format: each sheet = assembly type, rows = product + supplier combined
-      await importFlatFormat(workbook, result);
-    } else {
-      // Standard format: separate sheets for products, suppliers, etc.
-      await importSites(workbook, result);
-      await importSuppliers(workbook, result);
-      await importProducts(workbook, result);
-      await importProductSuppliers(workbook, result);
-      await importStockInitial(workbook, result);
-      await importMovements(workbook, result);
-      await importOrders(workbook, result);
-    }
-
-    res.json({
-      success: true,
-      data: result,
-      message: 'Import terminé',
-    });
-  } catch (error) {
-    next(error);
+export const importExcel = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    throw new AppError('Aucun fichier fourni', 400);
   }
-};
+
+  const workbook = XLSX.read(req.file.buffer, { type: 'buffer', bookFiles: true });
+
+  const result: ImportResult = {
+    products: { created: 0, updated: 0, errors: [] },
+    suppliers: { created: 0, updated: 0, errors: [] },
+    productSuppliers: { created: 0, updated: 0, errors: [] },
+    sites: { created: 0, errors: [] },
+    stocks: { created: 0, updated: 0, errors: [] },
+    movements: { created: 0, errors: [] },
+    orders: { created: 0, errors: [] },
+  };
+
+  if (isFlatFormat(workbook)) {
+    // New flat format: each sheet = assembly type, rows = product + supplier combined
+    await importFlatFormat(workbook, result);
+  } else {
+    // Standard format: separate sheets for products, suppliers, etc.
+    await importSites(workbook, result);
+    await importSuppliers(workbook, result);
+    await importProducts(workbook, result);
+    await importProductSuppliers(workbook, result);
+    await importStockInitial(workbook, result);
+    await importMovements(workbook, result);
+    await importOrders(workbook, result);
+  }
+
+  res.json({
+    success: true,
+    data: result,
+    message: 'Import terminé',
+  });
+});
 
 // Helper to get sheet data as objects
 function getSheetData(workbook: XLSX.WorkBook, sheetName: string): any[] {
@@ -934,56 +927,52 @@ async function parseSiteCondition(value: string | undefined): Promise<{ siteId: 
 }
 
 // Export templates
-export const getExportTemplate = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const workbook = XLSX.utils.book_new();
+export const getExportTemplate = asyncHandler(async (req: Request, res: Response) => {
+  const workbook = XLSX.utils.book_new();
 
-    // Products template
-    const productsData = [
-      ['Référence produit', 'Description', 'Qté 1 borne', 'Risque appro', 'Emplacement', 'Commentaire'],
-      ['PROD-001', 'Description du produit', 1, 'Moyen', 'A1', 'Notes...'],
-    ];
-    const productsSheet = XLSX.utils.aoa_to_sheet(productsData);
-    XLSX.utils.book_append_sheet(workbook, productsSheet, 'PRODUITS');
+  // Products template
+  const productsData = [
+    ['Référence produit', 'Description', 'Qté 1 borne', 'Risque appro', 'Emplacement', 'Commentaire'],
+    ['PROD-001', 'Description du produit', 1, 'Moyen', 'A1', 'Notes...'],
+  ];
+  const productsSheet = XLSX.utils.aoa_to_sheet(productsData);
+  XLSX.utils.book_append_sheet(workbook, productsSheet, 'PRODUITS');
 
-    // Suppliers template
-    const suppliersData = [
-      ['Produit', 'Fournisseur', 'Principal ?', 'PU HT', 'Délai', 'Frais livraison', 'Ref fournisseur', 'URL'],
-      ['PROD-001', 'Fournisseur A', true, 10.50, '2-3 jours', 5.00, 'FA-001', 'https://...'],
-    ];
-    const suppliersSheet = XLSX.utils.aoa_to_sheet(suppliersData);
-    XLSX.utils.book_append_sheet(workbook, suppliersSheet, 'REF FOURNISSEURS');
+  // Suppliers template
+  const suppliersData = [
+    ['Produit', 'Fournisseur', 'Principal ?', 'PU HT', 'Délai', 'Frais livraison', 'Ref fournisseur', 'URL'],
+    ['PROD-001', 'Fournisseur A', true, 10.50, '2-3 jours', 5.00, 'FA-001', 'https://...'],
+  ];
+  const suppliersSheet = XLSX.utils.aoa_to_sheet(suppliersData);
+  XLSX.utils.book_append_sheet(workbook, suppliersSheet, 'REF FOURNISSEURS');
 
-    // Stock Initial template
-    const stockData = [
-      ['Référence produit', 'Siège : neuf', 'Siège : occasion', 'Entrepôt : neuf', 'Entrepôt : occasion'],
-      ['PROD-001', 10, 2, 5, 0],
-    ];
-    const stockSheet = XLSX.utils.aoa_to_sheet(stockData);
-    XLSX.utils.book_append_sheet(workbook, stockSheet, 'STOCK INITIAL');
+  // Stock Initial template
+  const stockData = [
+    ['Référence produit', 'Siège : neuf', 'Siège : occasion', 'Entrepôt : neuf', 'Entrepôt : occasion'],
+    ['PROD-001', 10, 2, 5, 0],
+  ];
+  const stockSheet = XLSX.utils.aoa_to_sheet(stockData);
+  XLSX.utils.book_append_sheet(workbook, stockSheet, 'STOCK INITIAL');
 
-    // Movements template
-    const movementsData = [
-      ['Produit', 'Mouvement', 'Source', 'Cible', 'Qté', 'Date', 'Opérateur', 'Commentaire'],
-      ['PROD-001', 'Déplacement', 'Siège : neuf', 'Entrepôt : neuf', 5, new Date(), 'John', 'Transfert mensuel'],
-    ];
-    const movementsSheet = XLSX.utils.aoa_to_sheet(movementsData);
-    XLSX.utils.book_append_sheet(workbook, movementsSheet, 'MVT CLASSIK');
+  // Movements template
+  const movementsData = [
+    ['Produit', 'Mouvement', 'Source', 'Cible', 'Qté', 'Date', 'Opérateur', 'Commentaire'],
+    ['PROD-001', 'Déplacement', 'Siège : neuf', 'Entrepôt : neuf', 5, new Date(), 'John', 'Transfert mensuel'],
+  ];
+  const movementsSheet = XLSX.utils.aoa_to_sheet(movementsData);
+  XLSX.utils.book_append_sheet(workbook, movementsSheet, 'MVT CLASSIK');
 
-    // Orders template
-    const ordersData = [
-      ['Produit', 'Fournisseur', 'Qté', 'État commande', 'Destination', 'Date commande', 'Date prévue', 'Qté reçue', 'Responsable', 'Commentaire'],
-      ['PROD-001', 'Fournisseur A', 10, 'En cours', 'Siège : neuf', new Date(), new Date(), null, 'John', 'Commande urgente'],
-    ];
-    const ordersSheet = XLSX.utils.aoa_to_sheet(ordersData);
-    XLSX.utils.book_append_sheet(workbook, ordersSheet, 'COMMANDES CLASSIK');
+  // Orders template
+  const ordersData = [
+    ['Produit', 'Fournisseur', 'Qté', 'État commande', 'Destination', 'Date commande', 'Date prévue', 'Qté reçue', 'Responsable', 'Commentaire'],
+    ['PROD-001', 'Fournisseur A', 10, 'En cours', 'Siège : neuf', new Date(), new Date(), null, 'John', 'Commande urgente'],
+  ];
+  const ordersSheet = XLSX.utils.aoa_to_sheet(ordersData);
+  XLSX.utils.book_append_sheet(workbook, ordersSheet, 'COMMANDES CLASSIK');
 
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=template_import.xlsx');
-    res.send(buffer);
-  } catch (error) {
-    next(error);
-  }
-};
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename=template_import.xlsx');
+  res.send(buffer);
+});

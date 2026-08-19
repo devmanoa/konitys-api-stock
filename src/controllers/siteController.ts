@@ -1,102 +1,83 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { publishCrudEvent } from '../services/rabbitmq';
+import { asyncHandler } from '../utils/asyncHandler';
 
-export const getAll = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { type, isActive } = req.query;
+export const getAll = asyncHandler(async (req: Request, res: Response) => {
+  const { type, isActive } = req.query;
 
-    const where: any = {};
+  const where: any = {};
 
-    if (type) {
-      where.type = type;
-    }
+  if (type) {
+    where.type = type;
+  }
 
-    if (isActive !== undefined) {
-      where.isActive = isActive === 'true';
-    }
+  if (isActive !== undefined) {
+    where.isActive = isActive === 'true';
+  }
 
-    const sites = await prisma.site.findMany({
-      where,
-      include: {
-        _count: {
-          select: { stocks: true },
-        },
+  const sites = await prisma.site.findMany({
+    where,
+    include: {
+      _count: {
+        select: { stocks: true },
       },
-      orderBy: { name: 'asc' },
-    });
+    },
+    orderBy: { name: 'asc' },
+  });
 
-    res.json({ success: true, data: sites });
-  } catch (error) {
-    next(error);
-  }
-};
+  res.json({ success: true, data: sites });
+});
 
-export const getById = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
+export const getById = asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id as string;
 
-    const site = await prisma.site.findUnique({
-      where: { id },
-      include: {
-        stocks: {
-          include: { product: true },
-        },
+  const site = await prisma.site.findUnique({
+    where: { id },
+    include: {
+      stocks: {
+        include: { product: true },
       },
-    });
+    },
+  });
 
-    if (!site) {
-      throw new AppError('Site non trouvé', 404);
-    }
-
-    res.json({ success: true, data: site });
-  } catch (error) {
-    next(error);
+  if (!site) {
+    throw new AppError('Site non trouvé', 404);
   }
-};
 
-export const create = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const site = await prisma.site.create({
-      data: req.body,
-    });
+  res.json({ success: true, data: site });
+});
 
-    publishCrudEvent('sites', 'inserted', site, (req as any).user);
+export const create = asyncHandler(async (req: Request, res: Response) => {
+  const site = await prisma.site.create({
+    data: req.body,
+  });
 
-    res.status(201).json({ success: true, data: site });
-  } catch (error) {
-    next(error);
-  }
-};
+  publishCrudEvent('sites', 'inserted', site, (req as any).user);
 
-export const update = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
+  res.status(201).json({ success: true, data: site });
+});
 
-    const site = await prisma.site.update({
-      where: { id },
-      data: req.body,
-    });
+export const update = asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id as string;
 
-    publishCrudEvent('sites', 'updated', site, (req as any).user);
+  const site = await prisma.site.update({
+    where: { id },
+    data: req.body,
+  });
 
-    res.json({ success: true, data: site });
-  } catch (error) {
-    next(error);
-  }
-};
+  publishCrudEvent('sites', 'updated', site, (req as any).user);
 
-export const remove = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
+  res.json({ success: true, data: site });
+});
 
-    await prisma.site.delete({ where: { id } });
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id as string;
 
-    publishCrudEvent('sites', 'deleted', { id }, (req as any).user);
+  await prisma.site.delete({ where: { id } });
 
-    res.json({ success: true, message: 'Site supprimé' });
-  } catch (error) {
-    next(error);
-  }
-};
+  publishCrudEvent('sites', 'deleted', { id }, (req as any).user);
+
+  res.json({ success: true, message: 'Site supprimé' });
+});

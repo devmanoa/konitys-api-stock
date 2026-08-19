@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from './common';
 
 export const createMovementSchema = z.object({
   productId: z.string().uuid('ID produit invalide'),
@@ -32,9 +33,7 @@ export const createMovementSchema = z.object({
   message: 'Sites source/cible invalides pour ce type de mouvement',
 });
 
-export const movementQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+export const movementQuerySchema = paginationSchema.extend({
   productId: z.string().uuid().optional(),
   type: z.enum(['IN', 'OUT', 'TRANSFER']).optional(),
   siteId: z.string().uuid().optional(),

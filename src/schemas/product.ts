@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from './common';
 
 export const createProductSchema = z.object({
   // Optionnel : si absent ET que productCategoryId + brand + model sont
@@ -44,8 +45,8 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = createProductSchema.partial();
 
-export const productQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+export const productQuerySchema = paginationSchema.extend({
+  // Limite haute pour les listes produits (export / selects complets)
   limit: z.coerce.number().int().positive().max(10000).default(20),
   search: z.string().optional(),
   supplyRisk: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),

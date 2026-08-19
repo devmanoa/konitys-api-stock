@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { LocationQueryInput } from '../schemas/location';
+import { asyncHandler } from '../utils/asyncHandler';
 
 const include = {
   site: true,
@@ -9,35 +10,27 @@ const include = {
   children: { orderBy: { position: 'asc' as const } },
 };
 
-export const getAll = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { siteId } = ((req as any).parsedQuery || {}) as LocationQueryInput;
-    const where: any = {};
-    if (siteId) where.siteId = siteId;
-    const locations = await prisma.location.findMany({
-      where,
-      include,
-      orderBy: [{ position: 'asc' }, { name: 'asc' }],
-    });
-    res.json({ success: true, data: locations });
-  } catch (error) {
-    next(error);
-  }
-};
+export const getAll = asyncHandler(async (req: Request, res: Response) => {
+  const { siteId } = ((req as any).parsedQuery || {}) as LocationQueryInput;
+  const where: any = {};
+  if (siteId) where.siteId = siteId;
+  const locations = await prisma.location.findMany({
+    where,
+    include,
+    orderBy: [{ position: 'asc' }, { name: 'asc' }],
+  });
+  res.json({ success: true, data: locations });
+});
 
-export const getById = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = String(req.params.id);
-    const location = await prisma.location.findUnique({
-      where: { id },
-      include,
-    });
-    if (!location) throw new AppError('Emplacement introuvable', 404);
-    res.json({ success: true, data: location });
-  } catch (error) {
-    next(error);
-  }
-};
+export const getById = asyncHandler(async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const location = await prisma.location.findUnique({
+    where: { id },
+    include,
+  });
+  if (!location) throw new AppError('Emplacement introuvable', 404);
+  res.json({ success: true, data: location });
+});
 
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -84,14 +77,10 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
-export const remove = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
-    // Note: cascading deletes wipe children. Products pointing at this
-    // location have their locationId set to NULL by the FK.
-    await prisma.location.delete({ where: { id } });
-    res.json({ success: true });
-  } catch (error) {
-    next(error);
-  }
-};
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  // Note: cascading deletes wipe children. Products pointing at this
+  // location have their locationId set to NULL by the FK.
+  await prisma.location.delete({ where: { id } });
+  res.json({ success: true });
+});

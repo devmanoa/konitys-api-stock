@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from './common';
 
 export const assemblyTypeItemSchema = z.object({
   productId: z.string().uuid(),
@@ -18,8 +19,7 @@ export const updateAssemblyTypeSchema = z.object({
   items: z.array(assemblyTypeItemSchema).optional(),
 });
 
-export const querySchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
+export const querySchema = paginationSchema.extend({
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   search: z.string().optional(),
 });

@@ -1,6 +1,7 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
+import { asyncHandler } from '../utils/asyncHandler';
 
 /**
  * Catégorie principale d'un produit (Imprimante, PC, Écran, Câble, ...).
@@ -41,26 +42,22 @@ function coercePartTypeParam(v: unknown): PartTypeInner | null {
     : null;
 }
 
-export const getAll = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    // Filtres optionnels : ?partType=EQUIPMENT&isActive=true
-    const partTypeParam = typeof req.query.partType === 'string' ? req.query.partType : undefined;
-    const isActiveParam = typeof req.query.isActive === 'string' ? req.query.isActive : undefined;
-    const where: { partType?: PartTypeInner; isActive?: boolean } = {};
-    const pt = coercePartTypeParam(partTypeParam);
-    if (pt) where.partType = pt;
-    if (isActiveParam === 'true') where.isActive = true;
-    else if (isActiveParam === 'false') where.isActive = false;
+export const getAll = asyncHandler(async (req: Request, res: Response) => {
+  // Filtres optionnels : ?partType=EQUIPMENT&isActive=true
+  const partTypeParam = typeof req.query.partType === 'string' ? req.query.partType : undefined;
+  const isActiveParam = typeof req.query.isActive === 'string' ? req.query.isActive : undefined;
+  const where: { partType?: PartTypeInner; isActive?: boolean } = {};
+  const pt = coercePartTypeParam(partTypeParam);
+  if (pt) where.partType = pt;
+  if (isActiveParam === 'true') where.isActive = true;
+  else if (isActiveParam === 'false') where.isActive = false;
 
-    const categories = await prisma.productCategory.findMany({
-      where,
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
-    });
-    res.json({ success: true, data: categories });
-  } catch (error) {
-    next(error);
-  }
-};
+  const categories = await prisma.productCategory.findMany({
+    where,
+    orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+  });
+  res.json({ success: true, data: categories });
+});
 
 const VALID_PART_TYPES = ['EQUIPMENT', 'PROTECTION', 'ACCESSORY'] as const;
 type PartType = (typeof VALID_PART_TYPES)[number];
@@ -72,127 +69,115 @@ function coercePartType(v: unknown): PartType | null {
   return (VALID_PART_TYPES as readonly string[]).includes(v) ? (v as PartType) : null;
 }
 
-export const create = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { name, codeReference, description, isActive, displayOrder, partType } = req.body;
-    const normalizedName = normalizeName(name || '');
-    const normalizedCode = normalizeCode(codeReference || '');
-    if (!normalizedName) throw new AppError('Le nom est requis', 400);
-    if (!normalizedCode) throw new AppError('Le code référence est requis', 400);
-    if (normalizedCode.length > 12) {
+export const create = asyncHandler(async (req: Request, res: Response) => {
+  const { name, codeReference, description, isActive, displayOrder, partType } = req.body;
+  const normalizedName = normalizeName(name || '');
+  const normalizedCode = normalizeCode(codeReference || '');
+  if (!normalizedName) throw new AppError('Le nom est requis', 400);
+  if (!normalizedCode) throw new AppError('Le code référence est requis', 400);
+  if (normalizedCode.length > 12) {
+    throw new AppError('Le code référence doit faire au plus 12 caractères', 400);
+  }
+
+  const dup = await prisma.productCategory.findFirst({
+    where: {
+      OR: [
+        { name: { equals: normalizedName, mode: 'insensitive' } },
+        { codeReference: { equals: normalizedCode, mode: 'insensitive' } },
+      ],
+    },
+  });
+  if (dup) {
+    const which =
+      dup.codeReference.toLowerCase() === normalizedCode.toLowerCase()
+        ? `Le code « ${normalizedCode} » est déjà utilisé par « ${dup.name} »`
+        : `Une catégorie nommée « ${dup.name} » existe déjà`;
+    throw new AppError(which, 409);
+  }
+
+  const category = await prisma.productCategory.create({
+    data: {
+      name: normalizedName,
+      codeReference: normalizedCode,
+      description: description ?? null,
+      isActive: typeof isActive === 'boolean' ? isActive : true,
+      displayOrder: Number.isFinite(Number(displayOrder)) ? Number(displayOrder) : 0,
+      partType: coercePartType(partType),
+    },
+  });
+
+  res.status(201).json({ success: true, data: category });
+});
+
+export const update = asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const existing = await prisma.productCategory.findUnique({ where: { id } });
+  if (!existing) throw new AppError('Catégorie non trouvée', 404);
+
+  const { name, codeReference, description, isActive, displayOrder, partType } = req.body;
+  const data: {
+    name?: string;
+    codeReference?: string;
+    description?: string | null;
+    isActive?: boolean;
+    displayOrder?: number;
+    partType?: PartType | null;
+  } = {};
+
+  if (name !== undefined) {
+    const normalized = normalizeName(name);
+    if (!normalized) throw new AppError('Le nom est requis', 400);
+    if (normalized.toLowerCase() !== existing.name.toLowerCase()) {
+      const collision = await prisma.productCategory.findFirst({
+        where: {
+          id: { not: id },
+          name: { equals: normalized, mode: 'insensitive' },
+        },
+      });
+      if (collision) {
+        throw new AppError(`Une catégorie nommée « ${collision.name} » existe déjà`, 409);
+      }
+    }
+    data.name = normalized;
+  }
+
+  if (codeReference !== undefined) {
+    const normalized = normalizeCode(codeReference);
+    if (!normalized) throw new AppError('Le code référence est requis', 400);
+    if (normalized.length > 12) {
       throw new AppError('Le code référence doit faire au plus 12 caractères', 400);
     }
-
-    const dup = await prisma.productCategory.findFirst({
-      where: {
-        OR: [
-          { name: { equals: normalizedName, mode: 'insensitive' } },
-          { codeReference: { equals: normalizedCode, mode: 'insensitive' } },
-        ],
-      },
-    });
-    if (dup) {
-      const which =
-        dup.codeReference.toLowerCase() === normalizedCode.toLowerCase()
-          ? `Le code « ${normalizedCode} » est déjà utilisé par « ${dup.name} »`
-          : `Une catégorie nommée « ${dup.name} » existe déjà`;
-      throw new AppError(which, 409);
-    }
-
-    const category = await prisma.productCategory.create({
-      data: {
-        name: normalizedName,
-        codeReference: normalizedCode,
-        description: description ?? null,
-        isActive: typeof isActive === 'boolean' ? isActive : true,
-        displayOrder: Number.isFinite(Number(displayOrder)) ? Number(displayOrder) : 0,
-        partType: coercePartType(partType),
-      },
-    });
-
-    res.status(201).json({ success: true, data: category });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const update = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
-    const existing = await prisma.productCategory.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Catégorie non trouvée', 404);
-
-    const { name, codeReference, description, isActive, displayOrder, partType } = req.body;
-    const data: {
-      name?: string;
-      codeReference?: string;
-      description?: string | null;
-      isActive?: boolean;
-      displayOrder?: number;
-      partType?: PartType | null;
-    } = {};
-
-    if (name !== undefined) {
-      const normalized = normalizeName(name);
-      if (!normalized) throw new AppError('Le nom est requis', 400);
-      if (normalized.toLowerCase() !== existing.name.toLowerCase()) {
-        const collision = await prisma.productCategory.findFirst({
-          where: {
-            id: { not: id },
-            name: { equals: normalized, mode: 'insensitive' },
-          },
-        });
-        if (collision) {
-          throw new AppError(`Une catégorie nommée « ${collision.name} » existe déjà`, 409);
-        }
+    if (normalized !== existing.codeReference) {
+      const collision = await prisma.productCategory.findFirst({
+        where: {
+          id: { not: id },
+          codeReference: { equals: normalized, mode: 'insensitive' },
+        },
+      });
+      if (collision) {
+        throw new AppError(
+          `Le code « ${normalized} » est déjà utilisé par « ${collision.name} »`,
+          409,
+        );
       }
-      data.name = normalized;
     }
-
-    if (codeReference !== undefined) {
-      const normalized = normalizeCode(codeReference);
-      if (!normalized) throw new AppError('Le code référence est requis', 400);
-      if (normalized.length > 12) {
-        throw new AppError('Le code référence doit faire au plus 12 caractères', 400);
-      }
-      if (normalized !== existing.codeReference) {
-        const collision = await prisma.productCategory.findFirst({
-          where: {
-            id: { not: id },
-            codeReference: { equals: normalized, mode: 'insensitive' },
-          },
-        });
-        if (collision) {
-          throw new AppError(
-            `Le code « ${normalized} » est déjà utilisé par « ${collision.name} »`,
-            409,
-          );
-        }
-      }
-      data.codeReference = normalized;
-    }
-
-    if (description !== undefined) data.description = description;
-    if (typeof isActive === 'boolean') data.isActive = isActive;
-    if (Number.isFinite(Number(displayOrder))) data.displayOrder = Number(displayOrder);
-    if (partType !== undefined) data.partType = coercePartType(partType);
-
-    const category = await prisma.productCategory.update({ where: { id }, data });
-    res.json({ success: true, data: category });
-  } catch (error) {
-    next(error);
+    data.codeReference = normalized;
   }
-};
 
-export const remove = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
-    const existing = await prisma.productCategory.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Catégorie non trouvée', 404);
-    // Pas de FK vers Product (Lot 2), on peut supprimer librement.
-    await prisma.productCategory.delete({ where: { id } });
-    res.json({ success: true, message: 'Catégorie supprimée' });
-  } catch (error) {
-    next(error);
-  }
-};
+  if (description !== undefined) data.description = description;
+  if (typeof isActive === 'boolean') data.isActive = isActive;
+  if (Number.isFinite(Number(displayOrder))) data.displayOrder = Number(displayOrder);
+  if (partType !== undefined) data.partType = coercePartType(partType);
+
+  const category = await prisma.productCategory.update({ where: { id }, data });
+  res.json({ success: true, data: category });
+});
+
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const existing = await prisma.productCategory.findUnique({ where: { id } });
+  if (!existing) throw new AppError('Catégorie non trouvée', 404);
+  // Pas de FK vers Product (Lot 2), on peut supprimer librement.
+  await prisma.productCategory.delete({ where: { id } });
+  res.json({ success: true, message: 'Catégorie supprimée' });
+});

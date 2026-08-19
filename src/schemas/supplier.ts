@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from './common';
 
 // Regex pour valider un numéro de téléphone fixe (pas de portable)
 // Accepte les formats: 01-09 pour la France (pas 06/07), ou formats internationaux fixes
@@ -43,8 +44,8 @@ export const createSupplierSchema = z.object({
 
 export const updateSupplierSchema = createSupplierSchema.partial();
 
-export const supplierQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+export const supplierQuerySchema = paginationSchema.extend({
+  // Limite haute pour les listes fournisseurs (selects complets)
   limit: z.coerce.number().int().positive().max(10000).default(20),
   search: z.string().optional(),
   assemblyTypeId: z.string().uuid().optional(),

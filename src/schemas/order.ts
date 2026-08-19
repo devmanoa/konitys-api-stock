@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from './common';
 
 const orderItemSchema = z.object({
   productId: z.string().uuid('ID produit invalide'),
@@ -64,9 +65,7 @@ export const receiveAllSchema = z.object({
 
 export type ReceiveAllInput = z.infer<typeof receiveAllSchema>;
 
-export const orderQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+export const orderQuerySchema = paginationSchema.extend({
   status: z.enum(['PENDING', 'PARTIAL', 'COMPLETED', 'CANCELLED']).optional(),
   supplierId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
