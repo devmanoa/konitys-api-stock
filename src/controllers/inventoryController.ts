@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
-import * as XLSX from 'xlsx';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { AuthenticatedRequest } from '../types/auth';
 import { asyncHandler } from '../utils/asyncHandler';
+import { buildCompareData } from '../services/inventory/compare';
+import { applyInventoryCorrections } from '../services/inventory/corrections';
+import { buildInventoryExportFile } from '../services/inventory/export';
 
 /**
  * Inventory V1.
@@ -365,17 +367,6 @@ export const reopen = asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data: updated });
 });
 
-interface CompareLine {
-  productId: string;
-  reference: string;
-  description: string | null;
-  imageUrl: string | null;
-  hasSerialNumber: boolean;
-  counted: number;
-  theoretical: number;
-  gap: number;
-}
-
 // GET /inventories/:id/compare
 //
 // Aggregate counted (inventory entries) versus theoretical (stocks table)
@@ -390,69 +381,7 @@ export const compare = asyncHandler(async (req: Request, res: Response) => {
   const inv = await prisma.inventory.findUnique({ where: { id } });
   if (!inv) throw new AppError('Inventaire introuvable', 404);
 
-  const countedRows = await prisma.inventoryEntry.groupBy({
-    by: ['productId'],
-    where: { inventoryId: id },
-    _sum: { quantity: true },
-  });
-  const countedMap = new Map<string, number>();
-  for (const r of countedRows) countedMap.set(r.productId, r._sum.quantity ?? 0);
-
-  const theoreticalWhere: any = {};
-  if (inv.siteId) theoreticalWhere.siteId = inv.siteId;
-  const theoreticalRows = await prisma.stock.groupBy({
-    by: ['productId'],
-    where: theoreticalWhere,
-    _sum: { quantityNew: true, quantityUsed: true },
-  });
-  const theoreticalMap = new Map<string, number>();
-  for (const r of theoreticalRows) {
-    theoreticalMap.set(
-      r.productId,
-      (r._sum.quantityNew ?? 0) + (r._sum.quantityUsed ?? 0),
-    );
-  }
-
-  const productIds = new Set<string>([...countedMap.keys(), ...theoreticalMap.keys()]);
-  const products = await prisma.product.findMany({
-    where: { id: { in: Array.from(productIds) } },
-    select: {
-      id: true,
-      reference: true,
-      description: true,
-      imageUrl: true,
-      hasSerialNumber: true,
-    },
-  });
-
-  const lines: CompareLine[] = products.map((p) => {
-    const counted = countedMap.get(p.id) ?? 0;
-    const theoretical = theoreticalMap.get(p.id) ?? 0;
-    return {
-      productId: p.id,
-      reference: p.reference,
-      description: p.description,
-      imageUrl: p.imageUrl,
-      hasSerialNumber: p.hasSerialNumber,
-      counted,
-      theoretical,
-      gap: counted - theoretical,
-    };
-  });
-
-  lines.sort((a, b) => {
-    const aGap = Math.abs(a.gap);
-    const bGap = Math.abs(b.gap);
-    if (aGap !== bGap) return bGap - aGap;
-    return a.reference.localeCompare(b.reference);
-  });
-
-  const totals = {
-    productsCounted: countedMap.size,
-    productsWithGap: lines.filter((l) => l.gap !== 0).length,
-    totalSurplus: lines.reduce((s, l) => s + Math.max(0, l.gap), 0),
-    totalMissing: lines.reduce((s, l) => s + Math.max(0, -l.gap), 0),
-  };
+  const { lines, totals } = await buildCompareData(inv);
 
   res.json({
     success: true,
@@ -484,127 +413,8 @@ export const applyCorrections = asyncHandler(async (req: AuthenticatedRequest, r
     );
   }
 
-  const countedRows = await prisma.inventoryEntry.groupBy({
-    by: ['productId'],
-    where: { inventoryId: id },
-    _sum: { quantity: true },
-  });
-  const countedMap = new Map<string, number>();
-  for (const r of countedRows) countedMap.set(r.productId, r._sum.quantity ?? 0);
-
-  const theoreticalRows = await prisma.stock.groupBy({
-    by: ['productId'],
-    where: { siteId: inv.siteId },
-    _sum: { quantityNew: true, quantityUsed: true },
-  });
-  const theoreticalMap = new Map<string, number>();
-  for (const r of theoreticalRows) {
-    theoreticalMap.set(
-      r.productId,
-      (r._sum.quantityNew ?? 0) + (r._sum.quantityUsed ?? 0),
-    );
-  }
-
-  const productIds = Array.from(
-    new Set<string>([...countedMap.keys(), ...theoreticalMap.keys()]),
-  );
   const operator = req.user?.fullName || req.user?.username || 'Systeme';
-  const now = new Date();
-  const commentLabel = `Correction inventaire - ${inv.name}`;
-
-  // Pre-load all relevant Stock rows in ONE query instead of one findFirst
-  // per product (was N+1 inside the transaction).
-  const existingStocks = await prisma.stock.findMany({
-    where: { siteId: inv.siteId!, productId: { in: productIds } },
-  });
-  const stockMap = new Map<string, typeof existingStocks[number]>();
-  for (const s of existingStocks) stockMap.set(s.productId, s);
-
-  // Build the diff to apply, without writing yet.
-  type Diff = {
-    productId: string;
-    isInbound: boolean;
-    qty: number;
-    // How much to take from each pool when applying an OUT.
-    decFromUsed: number;
-    decFromNew: number;
-  };
-  const diffs: Diff[] = [];
-  for (const productId of productIds) {
-    const counted = countedMap.get(productId) ?? 0;
-    const theoretical = theoreticalMap.get(productId) ?? 0;
-    const gap = counted - theoretical;
-    if (gap === 0) continue;
-    const isInbound = gap > 0;
-    const qty = Math.abs(gap);
-    // For OUT, drain USED first (consistent with "matériel abîmé / perdu"
-    // pattern) then NEW. We never go below zero on either pool.
-    let decFromUsed = 0;
-    let decFromNew = 0;
-    if (!isInbound) {
-      const current = stockMap.get(productId);
-      const used = current?.quantityUsed ?? 0;
-      decFromUsed = Math.min(used, qty);
-      decFromNew = Math.min(current?.quantityNew ?? 0, qty - decFromUsed);
-    }
-    diffs.push({ productId, isInbound, qty, decFromUsed, decFromNew });
-  }
-
-  await prisma.$transaction(async (tx) => {
-    // Batch-create all movements in a single SQL.
-    if (diffs.length > 0) {
-      await tx.stockMovement.createMany({
-        data: diffs.map((d) => ({
-          productId: d.productId,
-          type: d.isInbound ? 'IN' : 'OUT' as const,
-          quantity: d.qty,
-          condition: 'NEW' as const,
-          movementDate: now,
-          operator,
-          comment: commentLabel,
-          ...(d.isInbound
-            ? { targetSiteId: inv.siteId! }
-            : { sourceSiteId: inv.siteId! }),
-        })),
-      });
-    }
-
-    // Apply each diff to the Stock row.
-    for (const d of diffs) {
-      const existing = stockMap.get(d.productId);
-      if (existing) {
-        await tx.stock.update({
-          where: { id: existing.id },
-          data: d.isInbound
-            ? { quantityNew: { increment: d.qty } }
-            : {
-                quantityNew: { decrement: d.decFromNew },
-                quantityUsed: { decrement: d.decFromUsed },
-              },
-        });
-      } else if (d.isInbound) {
-        await tx.stock.create({
-          data: {
-            productId: d.productId,
-            siteId: inv.siteId!,
-            quantityNew: d.qty,
-            quantityUsed: 0,
-          },
-        });
-      }
-      // If !existing && !isInbound: nothing to do, theoretical was already 0.
-    }
-
-    await tx.inventory.update({
-      where: { id },
-      data: {
-        correctionsApplied: true,
-        correctionsAppliedAt: now,
-      },
-    });
-  });
-
-  const movementsCreated = diffs.length;
+  const movementsCreated = await applyInventoryCorrections(inv, operator);
 
   res.json({ success: true, data: { movementsCreated } });
 });
@@ -626,128 +436,8 @@ export const exportXlsx = asyncHandler(async (req: Request, res: Response) => {
   });
   if (!inv) throw new AppError('Inventaire introuvable', 404);
 
-  const safeName = (inv.name || 'inventaire')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-zA-Z0-9_-]+/g, '_')
-    .slice(0, 60);
+  const { buffer, filename } = await buildInventoryExportFile(inv, tabParam, filterParam);
 
-  let rows: any[] = [];
-  let sheetName = 'Inventaire';
-  let suffix = 'entries';
-
-  if (tabParam === 'unknowns') {
-    sheetName = 'Produits non trouves';
-    suffix = 'non_trouves';
-    const unknowns = await prisma.inventoryUnknownEntry.findMany({
-      where: { inventoryId: id },
-      include: { location: { select: { name: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
-    rows = unknowns.map((u) => ({
-      Date: new Date(u.createdAt).toLocaleString('fr-FR'),
-      Description: u.description,
-      Categorie: u.category || '',
-      Zone: u.location?.name || '',
-      Quantite: u.quantity,
-      Commentaire: u.comment || '',
-      Operateur: u.operatorName || '',
-    }));
-  } else if (tabParam === 'compare') {
-    sheetName = 'Comparaison';
-    suffix = 'comparaison';
-
-    const countedRows = await prisma.inventoryEntry.groupBy({
-      by: ['productId'],
-      where: { inventoryId: id },
-      _sum: { quantity: true },
-    });
-    const countedMap = new Map<string, number>();
-    for (const r of countedRows) countedMap.set(r.productId, r._sum.quantity ?? 0);
-
-    const theoreticalWhere: any = {};
-    if (inv.siteId) theoreticalWhere.siteId = inv.siteId;
-    const theoreticalRows = await prisma.stock.groupBy({
-      by: ['productId'],
-      where: theoreticalWhere,
-      _sum: { quantityNew: true, quantityUsed: true },
-    });
-    const theoreticalMap = new Map<string, number>();
-    for (const r of theoreticalRows) {
-      theoreticalMap.set(
-        r.productId,
-        (r._sum.quantityNew ?? 0) + (r._sum.quantityUsed ?? 0),
-      );
-    }
-
-    const productIds = new Set<string>([...countedMap.keys(), ...theoreticalMap.keys()]);
-    const products = await prisma.product.findMany({
-      where: { id: { in: Array.from(productIds) } },
-      select: { id: true, reference: true, description: true },
-    });
-
-    const allLines = products.map((p) => {
-      const counted = countedMap.get(p.id) ?? 0;
-      const theoretical = theoreticalMap.get(p.id) ?? 0;
-      return {
-        reference: p.reference,
-        description: p.description || '',
-        counted,
-        theoretical,
-        gap: counted - theoretical,
-      };
-    });
-
-    const lines = allLines.filter((l) => {
-      if (filterParam === 'all') return true;
-      if (filterParam === 'gap') return l.gap !== 0;
-      if (filterParam === 'surplus') return l.gap > 0;
-      if (filterParam === 'missing') return l.gap < 0;
-      return true;
-    });
-    lines.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
-
-    rows = lines.map((l) => ({
-      Reference: l.reference,
-      Description: l.description,
-      Compte: l.counted,
-      Theorique: l.theoretical,
-      Ecart: l.gap,
-    }));
-  } else {
-    sheetName = 'Saisies';
-    suffix = 'saisies';
-    const entries = await prisma.inventoryEntry.findMany({
-      where: { inventoryId: id },
-      include: {
-        product: { select: { reference: true, description: true, hasSerialNumber: true } },
-        location: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    rows = entries.map((e) => ({
-      Date: new Date(e.createdAt).toLocaleString('fr-FR'),
-      Reference: e.product.reference,
-      Description: e.product.description || '',
-      Zone: e.location?.name || '',
-      Quantite: e.product.hasSerialNumber ? 1 : e.quantity,
-      'N° serie': e.serialNumber || '',
-      Etat: e.state,
-      Commentaire: e.comment || '',
-      Operateur: e.operatorName || '',
-    }));
-  }
-
-  // Build the workbook even when rows is empty so the user still gets a
-  // file with headers (clearer than a 404).
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows, {
-    header: rows[0] ? Object.keys(rows[0]) : undefined,
-  });
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-  const filename = `${safeName}_${suffix}.xlsx`;
   res.setHeader(
     'Content-Type',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
