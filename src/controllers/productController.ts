@@ -478,10 +478,7 @@ export const previewReference = asyncHandler(async (req: Request, res: Response)
     select: { codeReference: true },
   });
   if (!cat) {
-    return res.status(404).json({
-      success: false,
-      error: 'Catégorie principale introuvable',
-    });
+    throw new AppError('Catégorie principale introuvable', 404);
   }
   const reference = await generateUniqueReference({
     code: cat.codeReference,

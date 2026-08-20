@@ -5,7 +5,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import prisma from '../config/database';
 import { AppError } from '../middleware/errorHandler';
-import { recordAttachmentAdded, recordAttachmentRemoved } from '../services/orderAudit';
+import { recordAttachmentAdded, recordAttachmentRemoved } from '../services/order/audit';
 import { asyncHandler } from '../utils/asyncHandler';
 
 // Attachments live under /uploads/order-attachments. Same disk volume as

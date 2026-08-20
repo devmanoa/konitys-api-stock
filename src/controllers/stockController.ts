@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database';
+import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../utils/asyncHandler';
 
 export const getAll = asyncHandler(async (req: Request, res: Response) => {
@@ -34,19 +35,19 @@ export const getAll = asyncHandler(async (req: Request, res: Response) => {
 export const getSnapshot = asyncHandler(async (req: Request, res: Response) => {
   const dateParam = req.query.date as string | undefined;
   if (!dateParam) {
-    return res.status(400).json({ success: false, error: 'Paramètre `date` requis (YYYY-MM-DD)' });
+    throw new AppError('Paramètre `date` requis (YYYY-MM-DD)', 400);
   }
   // Expect strict YYYY-MM-DD; build the cutoff at end-of-day in UTC so the
   // result is independent of the server's local timezone (Coolify
   // containers may be UTC, Europe/Paris, etc.).
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateParam);
   if (!m) {
-    return res.status(400).json({ success: false, error: 'Date invalide (format attendu : YYYY-MM-DD)' });
+    throw new AppError('Date invalide (format attendu : YYYY-MM-DD)', 400);
   }
   const [, y, mo, d] = m;
   const cutoff = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), 23, 59, 59, 999));
   if (isNaN(cutoff.getTime())) {
-    return res.status(400).json({ success: false, error: 'Date invalide' });
+    throw new AppError('Date invalide', 400);
   }
 
   const [currentStocks, futureMovements] = await Promise.all([
